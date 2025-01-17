@@ -1,0 +1,3 @@
+# ISAAC RNG -- Public Domain -- AUTHOR: Bob Jenkins
+include/flux/isaac.h
+libflux/isaac.c

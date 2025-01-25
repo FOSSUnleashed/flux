@@ -1,0 +1,14 @@
+MKSHELL	= rcxs
+
+DILL_C	= bsock.c chan.c cr.c ctx.c dns.c fd.c handle.c happyeyeballs.c http.c iol.c ipaddr.c ipc.c libdill.c msock.c now.c pollset.c prefix.c rbtree.c socks5.c stack.c suffix.c tcp.c term.c tls.c udp.c utils.c ws.c file.c conf.c chunk.c
+DILL_O	= ${DILL_C:%.c=$BUILD/_libdill/%.o}
+
+$BUILD/_libdill/%.o: libdill/%.c
+	access -d $BUILD/_libdill || mkdir $BUILD/_libdill
+	$CC $CFLAGS -DDILL_SOCKETS $CPPFLAGS $TARGET_ARCH -c -o $target $prereq
+
+$BUILD/_libdill/dns.o: libdill/dns/dns.c
+	$CC $CFLAGS -DDILL_SOCKETS $CPPFLAGS $TARGET_ARCH -c -o $target $prereq
+
+$BUILD/lib/libdill.a: $DILL_O
+	$AR $ARFLAGS $target $prereq

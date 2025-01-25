@@ -1,0 +1,11 @@
+#!/usr/bin/env rcxs
+
+. rcxs/build
+. mk/xs
+
+tests = <={filter {|x| !~ $x *.o} $BUILD/test_*}
+
+for t $tests {
+	name = <={~~ $t $BUILD/test_*}
+	echo $name \= <=$t
+}

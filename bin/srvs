@@ -1,0 +1,20 @@
+#!/usr/bin/env rcxs
+
+srv_set = <={~~ cmd/srv_*.c cmd/srv_*.c}
+dir_set = <={~~ cmd/*/ cmd/*/}
+
+echo 'MKSHELL = rcxs' \n
+
+for t $srv_set {
+	t = srv_^$t
+	echo <={%flatten \n\t '$BUILD/'^$t^': $BUILD/cmd/'^$t^'.o $LIBS include/r9.h' 'CC $LDFLAGS $TARGET_ARCH <={filter {|x| ~ $x *.o} $prereq } $LDLIBS -o $target'} \n
+}
+
+for d $dir_set {
+	o = <={~~ cmd/^$d^/*.c cmd/^$d^/*.c}
+	o = '$BUILD/cmd/'^$d^'/'^$o^'.o'
+	echo '$BUILD/'^$d^': '^$^o^' $LIBS include/r9.h'
+	echo \t'CC $LDFLAGS $TARGET_ARCH <={filter {|x| ~ $x *.o} $prereq } $LDLIBS -o $target'
+}
+
+echo all:V: \$BUILD/^$dir_set \$BUILD/srv_^$srv_set \n

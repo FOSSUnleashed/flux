@@ -1,0 +1,12 @@
+#!/usr/bin/env rcxs
+
+. rcxs/build
+
+if {!access $FLUX_LIB} {
+	mkdir -p $FLUX_LIB || {
+		echo >[1=2] Could not create build directory!
+		exit 1
+	}
+}
+
+var BUILD FLUX_LIB

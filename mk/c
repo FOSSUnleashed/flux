@@ -1,0 +1,5 @@
+CFLAGS	= $CFLAGS -Iinclude -g3 -Wall -Wno-format -Wno-pointer-sign -Wno-unused-function
+LDLIBS	= $LDLIBS -L$FLUX_LIB -ldill -lflux -lssl -lcrypto
+LDFLAGS	= $LDFLAGS -static
+
+CXXFLAGS	= $CXXFLAGS

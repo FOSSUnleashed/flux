@@ -1,0 +1,7 @@
+# Note: shell is sh
+
+cscope.files:V:
+	find -type f -name '*.[chly]' > $target
+	cscope -l <<<'' >/dev/null 2>/dev/null
+
+all:V: cscope.files

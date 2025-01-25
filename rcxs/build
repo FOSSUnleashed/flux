@@ -1,0 +1,11 @@
+SYS	= `{uname -s}
+ARCH	= `{uname -m}
+
+BASE	= `{pwd}^/build
+
+BUILD = <={%flatten / $BASE $SYS $ARCH}
+FLUX_LIB	= $BUILD^/lib
+
+if {access ~/lib/flux_build_local} {
+	. ~/lib/flux_build_local
+}

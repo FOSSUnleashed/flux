@@ -1,0 +1,13 @@
+CFLAGS = $CFLAGS -DSNOW_ENABLED
+
+MKSHELL	= rcxs
+
+TESTS = time glob json mq
+
+$BUILD/test_%.o: tests/%.c
+	$CC $CFLAGS $CPPFLAGS $TARGET_ARCH -c -o $target $prereq
+
+$BUILD/test_%: $BUILD/test_%.o
+	$CC $LDFLAGS $TARGET_ARCH $prereq $LDLIBS -o $target
+
+all:V: ${TESTS:%=$BUILD/test_%}

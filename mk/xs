@@ -1,0 +1,7 @@
+# Note: this must be usable by both rcxs and mk!
+
+fn__2dfilter = '{|fn-fn list| map {|x| if {fn $x} { result $x } else { result } } $list }'
+fn__2dset = '{|var val| $var = $val || true }'
+fn__2ddo = '{|*| %or {$*} true}'
+
+MKSHELL = rcxs

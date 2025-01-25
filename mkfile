@@ -77,10 +77,10 @@ clean:V:
 	rm -f cscope.files cscope.out
 	find build -type f -delete
 
-<mk/dill
-<mk/flux
-<mk/cscope
-<mk/tests
 <|./bin/srvs
+<mk/tests
+<mk/flux
+<mk/dill
+<mk/cscope
 
 all:V: $DIRS $LIBS $BIN $MAN

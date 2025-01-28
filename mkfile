@@ -36,25 +36,18 @@ all:V:
 %.png: %.dot
 	dot -Tpng -o $target $prereq
 
-tpl/%.h: tpl/%.html
-	sed -Ez 's/\n/\\n/g; s/"/\\"/g; s/&/&amp;/g' $prereq | sed 's/.*/#define TPL_'^$stem^' "&"/' > $target
+build/any/include/tpl/%.h: build/any/include/tpl/ tpl/%.html
+	set reqs <={filter {|x| ~ $x *.html} $prereq}
+	sed -Ez 's/\n/\\n/g; s/"/\\"/g; s/&/&amp;/g' $reqs | sed 's/.*/#define TPL_'^$stem^' "&"/' > $target
 
 mktest:V:
 	set foo bar
 	do false
 	echo $foo
+	var target alltarget pid nproc prereq
 
-termtest: termtest.c
+http: http.c build/any/include/tpl/index.h
 	$CC $CFLAGS $LDFLAGS <={filter {|x| ~ $x *.c} $prereq } $LDLIBS -o $target
-
-http: http.c tpl/index.h
-	$CC $CFLAGS $LDFLAGS <={filter {|x| ~ $x *.c} $prereq } $LDLIBS -o $target
-
-tmp: tmp.c
-	$CC $CFLAGS $LDFLAGS $prereq $LDLIBS -o $target
-
-ws:V: ws.c
-	$CC $CFLAGS $LDFLAGS $prereq $LDLIBS -o $target
 
 tprox: tprox.c
 	$CC $CFLAGS $LDFLAGS $prereq $LDLIBS -o $target
@@ -66,9 +59,8 @@ $BUILD/cmd/%.o: cmd/%.c include/new.h
 	access -d $BUILD/cmd/^`{dirname $stem} || mkdir -p $BUILD/cmd/^`{dirname $stem}
 	$CC $CFLAGS $TARGET_ARCH -c -o $target <={filter {|x| ~ $x *.c} $prereq }
 
-$BUILD/cmd/%/:
-	mkdir -p $target
-
+build/%/:
+	mkdir -p build/$stem
 
 man/%.3: doc/%.md
 	scdoc < $prereq > $target
@@ -83,4 +75,4 @@ clean:V:
 <mk/dill
 <mk/cscope
 
-all:V: $DIRS $LIBS $BIN $MAN
+all:V: build/any/ $DIRS $LIBS $BIN $MAN

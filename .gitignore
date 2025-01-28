@@ -1,0 +1,6 @@
+/build
+/man
+/cscope*
+/mnt
+/_*
+/include/cmc

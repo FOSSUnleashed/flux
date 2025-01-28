@@ -155,6 +155,8 @@
 			* MIME (pull from mblaze)
 			* TLS Date
 			* Fake FUSE (emulate the FUSE API for 9p)
+			* Fake libev (emulate libev)
+			* Fake libuv (emulate libuv)
 			* Namespaces???? (Like Linux ones?)
 			* XDG
 			* dial/listen

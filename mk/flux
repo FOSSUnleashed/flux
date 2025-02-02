@@ -20,6 +20,8 @@ FLUX_	= \
 	twitch\
 	isaac\
 	isaacbhc\
+	ulid\
+	base32\
 	fmt
 FLUX_O	= ${FLUX_:%=$BUILD/_libflux/%.o}
 

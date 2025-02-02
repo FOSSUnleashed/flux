@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 int64_t flux_parsetime(const char * const s);
 
 // flux_time

@@ -87,8 +87,8 @@ void flux_isaac63(flux_isaac64_ctx *);
  Call rand(/o_ isaac32_ctx *r _o/) to retrieve a single 32-bit random value
 ------------------------------------------------------------------------------
 */
-#define flux_rand32(r) (!(r)->randcnt-- ? (flux_isaac32(r), (r)->randcnt=RANDSIZ-1, (r)->randrsl[(r)->randcnt]) : (r)->randrsl[(r)->randcnt])
-#define flux_rand64(r) (!(r)->randcnt-- ? (flux_isaac64(r), (r)->randcnt=RANDSIZ-1, (r)->randrsl[(r)->randcnt]) : (r)->randrsl[(r)->randcnt])
+#define flux_rand32(r) (!(r)->randcnt-- ? (flux_isaac32(r), (r)->randcnt=FLUX_ISAAC_RANDSIZ-1, (r)->randrsl[(r)->randcnt]) : (r)->randrsl[(r)->randcnt])
+#define flux_rand64(r) (!(r)->randcnt-- ? (flux_isaac64(r), (r)->randcnt=FLUX_ISAAC_RANDSIZ-1, (r)->randrsl[(r)->randcnt]) : (r)->randrsl[(r)->randcnt])
 
 #if !defined FLUX_DISABLE_RAW_NAMES
 #define isaac64_ctx flux_isaac64_ctx

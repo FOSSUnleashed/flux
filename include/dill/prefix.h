@@ -26,6 +26,7 @@
 #define LIBDILL_PREFIX_H_INCLUDED
 
 #include <dill/core.h>
+#include <dill/msock.h>
 
 #ifdef __cplusplus
 extern "C" {

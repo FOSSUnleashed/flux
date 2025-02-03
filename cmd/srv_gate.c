@@ -2,6 +2,7 @@
 #include <r9.h>
 #include <dill/all.h>
 #include <flux/time.h>
+#include <assert.h>
 
 char UN[] = "R";
 
@@ -35,6 +36,7 @@ void demo_read(R9fid *f, C9tag tag, uint64_t offset, uint32_t size) {
 
 	// grab a new tag structure
 	if (dill_list_empty(&free_tags)) {
+		assert(tag_cnt < 128);
 		cur = tags + tag_cnt;
 		tag_cnt++;
 	} else {

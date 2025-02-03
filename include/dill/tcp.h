@@ -27,6 +27,7 @@
 
 #include <dill/core.h>
 #include <dill/bsock.h>
+#include <dill/ip.h>
 
 #ifdef __cplusplus
 extern "C" {

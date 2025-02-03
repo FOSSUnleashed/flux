@@ -26,6 +26,7 @@
 #define LIBDILL_IPC_H_INCLUDED
 
 #include <dill/core.h>
+#include <dill/bsock.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -122,4 +123,3 @@ DILL_EXPORT int dill_ipc_pair_mem(
 #endif
 
 #endif
-

@@ -95,9 +95,9 @@ struct R9tag* allocTag() {
 
 	// grab a new tag structure
 	if (dill_list_empty(&free_tags)) {
+		assert(tag_cnt < 128);
 		cur = tags + tag_cnt;
 		tag_cnt++;
-		assert(tag_cnt < 128);
 	} else {
 		it = dill_list_next(&free_tags);
 		dill_list_erase(it);

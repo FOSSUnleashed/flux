@@ -5,6 +5,10 @@ dir_set = <={~~ cmd/*/ cmd/*/}
 
 echo 'MKSHELL = rcxs' \n
 
+if {!~ $BUILD} {
+	echo 'CFLAGS = $CFLAGS -DBUILD_TS='^`{$BUILD^/o.s}
+}
+
 for t $srv_set {
 	t = srv_^$t
 	echo <={%flatten \n\t '$BUILD/'^$t^': $BUILD/cmd/'^$t^'.o $LIBS include/r9.h' 'CC $LDFLAGS $TARGET_ARCH <={filter {|x| ~ $x *.o} $prereq } $LDLIBS -o $target'} \n

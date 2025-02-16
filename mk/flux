@@ -22,7 +22,16 @@ FLUX_	= \
 	isaacbhc\
 	ulid\
 	base32\
-	fmt
+	fmt\
+	WjCryptLib_Aes\
+	WjCryptLib_AesCbc\
+	WjCryptLib_AesCtr\
+	WjCryptLib_AesOfb\
+	WjCryptLib_Md5\
+	WjCryptLib_Rc4\
+	WjCryptLib_Sha1\
+	WjCryptLib_Sha256\
+	WjCryptLib_Sha512
 FLUX_O	= ${FLUX_:%=$BUILD/_libflux/%.o}
 
 $BUILD/_libflux/%.o: libflux/%.c

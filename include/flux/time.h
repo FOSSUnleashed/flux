@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+typedef uint64_t Time;
+
 int64_t flux_parsetime(const char * const s);
 
 // flux_time

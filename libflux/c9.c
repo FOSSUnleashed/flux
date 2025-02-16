@@ -479,8 +479,11 @@ void srv_proc(C9ctx * ctx, C9t * t) {
 		}
 		break;
 	case Tclunk:
-		printf("CLUNK: %016llx %d\n", f, c->nextFid);
-		print_fids_debug(c);
+		if (0) {
+			printf("CLUNK: %016llx %d\n", f, c->nextFid);
+			print_fids_debug(c);
+		}
+
 		if (f) {
 			releaseFid(c, f);
 		}

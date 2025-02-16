@@ -21,17 +21,17 @@ uint8_t * flux_bufindexnull(const uint8_t * in, const uint8_t * end, uint8_t ch)
 
 	for (; in < end; ++in) {
 		if (ch == *in) {
-			return in;
+			return (uint8_t *)in;
 		}
 	}
 
-	return end;
+	return (uint8_t *)end;
 }
 
 uint8_t * flux_bufindex(const uint8_t * in, const uint8_t * end, uint8_t ch) {
 	const uint8_t *p = flux_bufindexnull(in, end, ch);
 
-	return NULL != p && *p == ch ? p : NULL;
+	return NULL != p && *p == ch ? (uint8_t *)p : NULL;
 }
 
 int flux_bufcmp(const uint8_t * a, const uint8_t * aend, const uint8_t * b, const uint8_t * bend) {
@@ -49,6 +49,25 @@ int flux_bufcmp(const uint8_t * a, const uint8_t * aend, const uint8_t * b, cons
 	// b size check infered
 	for (; a < aend && 0 == res; ++a, ++b) {
 		res = *a - *b;
+	}
+
+	return res;
+}
+
+int flux_bufeq(const uint8_t * a, const uint8_t * aend, const uint8_t * str, uint8_t ** out) {
+	int res = 0;
+
+	if (aend < a || NULL == a || NULL == aend || NULL == str) {
+		errno = EINVAL;
+		return -257;
+	}
+
+	for (; a < aend && 0 == res && *str; ++a, ++str) {
+		res = *a - *str;
+	}
+
+	if (NULL != out) {
+		*out = (uint8_t *)a - 1;
 	}
 
 	return res;
@@ -95,6 +114,12 @@ uint8_t * flux_buflwrite(uint8_t * dst, const uint8_t * dstend, const uint8_t * 
 	return flux_buflcpy(dst, dstend, src, end);
 }
 
+void flux_bufset(uint8_t * dst, const uint8_t * dstend, uint8_t val) {
+	while (dst < dstend) {
+		*dst++ = val;
+	}
+}
+
 // TODO
 // [rw][su](b?)(8|16|32|64) -- 32 functions 
 
@@ -116,7 +141,7 @@ uint8_t * flux_buflwrite(uint8_t * dst, const uint8_t * dstend, const uint8_t * 
 #define IS_SEP(c) (' ' == (c) || '\t' == (c) || '=' == (c))
 
 int flux_str_parse_ctl(const char * data, char * buf, uint32_t sz, uint32_t bsz, char **V) {
-	char *p = data, *bufend, *dataend;
+	const char *p = data, *bufend, *dataend;
 
 	dataend = data + sz;
 	bufend = buf + bsz;

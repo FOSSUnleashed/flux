@@ -7,9 +7,7 @@
 ```c
 #include <libdill.h>
 
-int prefix_detach(
-    int s,
-    int64_t deadline);
+int prefix_detach(int s);
 ```
 
 # DESCRIPTION

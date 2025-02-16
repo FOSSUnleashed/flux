@@ -7,7 +7,7 @@ MKSHELL = rcxs
 ARFLAGS	= -rv
 AR	= ar
 
-BIN = $BUILD/o.pread $BUILD/o.fact
+BIN = $BUILD/o.pread $BUILD/o.fact $BUILD/o.s
 MAN	= man/ipc_connect.3 man/yield.3
 
 # Not sure how much this is needed

@@ -10,6 +10,7 @@
 #include <flux/util.h>
 #include <stdarg.h>
 #include <dnd.h>
+#include <stdbool.h>
 
 #include <stdio.h>
 
@@ -18,6 +19,7 @@ uint8_t logbuf[1 << 14];
 
 isaac32_ctx rng;
 List turn, *T = &turn;
+bool Victory = false;
 
 #define RAND() rand32(&rng)
 
@@ -34,7 +36,7 @@ struct Creature *activeTurn();
     Temporary, Effective Modifier.  Writes are accepted to apply level-up
     Ability Score bonuses only.
 * **$ability**: Int:State Current effective ability score.
-* **$ability_mod**: Int:State Current effective ability modifier.
+* **$ability.mod**: Int:State Current effective ability modifier.
 * **skills**: Int[3]+Boolean:Multi-state/RPC: Skills table, in order: Score, Ranks,
     Modifiers, Class-skill
 * **level**: Int:State Current creature level/max-HD.
@@ -52,9 +54,65 @@ struct Creature *activeTurn();
     any.
 // */
 
-Creature player, monster, mon2;
-
 #define GET_CREATURE_FILE_TYPE(qid) ((qid).path & 0xFF)
+#define streq(a, b) (0 == strcmp((a), (b)))
+
+#define MAX_CREATURES	(1 << 16)
+#define QID_TYPE_MASK	(0xF000000000000000LL)
+#define QID_FILE_MASK	(0x00000000000000FFLL)
+#define QID_ID_MASK	(0x0000000000FFFF00LL)
+
+// N___ ____ __II IISS
+
+Creature *getCreatureByName(const uint8_t * str) {
+	List *it;
+	struct Creature *cur;
+
+	flux_list_foreach(&turn, turn, it, cur) {
+		// TODO: use proper list of all creatures
+		if (streq(str, cur->files[CREATURE_ROOT].file.st.name)) {
+			return cur;
+		}
+	}
+
+	return NULL;
+}
+
+R9file *getCreatureRootFileByName(const uint8_t * str) {
+	Creature * cr = getCreatureByName(str);
+
+	return (NULL == cr) ? NULL : &cr->files[CREATURE_ROOT].file;
+}
+
+Creature *getCreatureFromFile(R9file * rf, uint32_t *idout) {
+	CreatureFile *cf;
+	C9qid	* q = &rf->st.qid;
+	uint64_t id = (~QID_ID_MASK & q->path);
+
+	if (C9qtdir == q->type && (MAX_CREATURE_FILES > id)) {
+		cf	= dill_cont(rf, struct CreatureFile, file);
+
+		if (NULL != idout) {
+			*idout = id;
+		}
+
+		return cf->cr;
+	}
+
+	return NULL;
+}
+
+void takeDamage(Creature *cr, DamageType dt, uint16_t amt) {
+	(void)dt;
+	cr->hp.current = max(cr->hp.current - amt, -10);
+
+	if (0 >= cr->hp.current && 0 == cr->down) {
+		cr->down = 2;
+		logbuffmt("%s has fallen down!\n", cr->CRFNAME);
+	}
+}
+
+Creature player[4], monster, mon2;
 
 uint8_t *flux_bufwriteint16(uint8_t *buf, uint8_t *bufend, int16_t val) {
 	if (NULL == buf || NULL == bufend || buf > bufend) {
@@ -127,7 +185,11 @@ void flushReady(struct Creature *cr) { // Make this part of the library, takes a
 
 	r9tag_foreach(&cr->gate_tags, it, cur) {
 		if (rf == cur->f->file) {
-			s9read(&cur->f->s->c->ctx, cur->tag, NULL, 0);
+			if (Victory) {
+				s9error(&cur->f->s->c->ctx, cur->tag, "Victory");
+			} else {
+				s9read(&cur->f->s->c->ctx, cur->tag, NULL, 0);
+			}
 
 			dill_list_erase(it);
 			dill_list_insert(it, &cr->free_tags);
@@ -136,6 +198,8 @@ void flushReady(struct Creature *cr) { // Make this part of the library, takes a
 			it = &cr->gate_tags;
 		}
 	}
+
+	logbuffmt("It is now %s's turn\n", cr->CRFNAME);
 }
 
 uint16_t die(uint16_t sides) {
@@ -177,13 +241,26 @@ void rollInitiative() {
 	}
 }
 
-void nextTurn() {
-	T = dill_list_next(T);
-	struct Creature *cr;
+bool creatureAbleToAct(Creature *cr) {
+	return cr->hp.current > 0;
+}
 
-	if (&turn == T) {
+void nextTurn() {
+	struct Creature *cr = dill_cont(T, Creature, turn);
+
+	// Note: we might accidentally disconnect T from &turn, make sure we don't
+
+	do {
 		T = dill_list_next(T);
-	}
+
+		if (&turn == T) {
+			T = dill_list_next(T);
+		}
+
+		if (creatureAbleToAct(dill_cont(T, Creature, turn))) {
+			break;
+		}
+	} while (&cr->turn != T);
 
 	if (&turn == T) {
 		// we have no-one to play
@@ -210,43 +287,61 @@ struct Creature *activeTurn() {
 #define match(a, sz, b, p) (0 == flux_bufeq(a, a + sz, b, &p))
 
 int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
-	struct Creature *cr, *tg;
+	struct Creature *cr, *tg, *ntg;
 	struct CreatureFile *cf = dill_cont(f->file, struct CreatureFile, file);
 	cr = cf->cr;
 	uint16_t rolls[2];
-	uint8_t crit = 0, *p, *crname, *tgname;
+	uint8_t crit = 0, *p, *be = buf + size;
 
 	if (activeTurn() != cr) {
 		*errstr = "Not your turn";
 		return -1;
 	}
 
-	if (cr == &player) {
+	// TODO function that returns first valid enemy
+	if (cr == player || cr == player + 1 || cr == player + 2 || cr == player + 3) {
 		tg = &monster;
 	} else {
-		tg	 = &player;
+		tg	 = player;
 	}
 
-	crname	= cr->files->file.st.name;
-	tgname	= tg->files->file.st.name;
-
 	if (match(buf, size, "end", p)) {
-		logbuffmt("%s ended their turn with no action\n", crname);
+		logbuffmt("%s ended their turn with no action\n", cr->CRFNAME);
 	} else if (match(buf, size, "heal", p)) {
 		rolls[0] = dice(2, 12);
 
 		cr->hp.current = min(cr->hp.current + rolls[0], cr->hp.max);
 
-		logbuffmt("%s healed %d hit points\n", crname, rolls[0]);
+		logbuffmt("%s healed %d hit points %d %02x(%c)\n", cr->CRFNAME, rolls[0], be - p, *be, *be);
 	} else if (match(buf, size, "spell", p)) {
 		rolls[0] = dice(2, 6) + 2;
 
-		tg->hp.current = max(-10, tg->hp.current - rolls[0]);
+		if (p != be) {
+			for (++p; p <= be && ' ' == *p; ++p);
 
-		logbuffmt("%s cast a spell on %s for %d damage\n", crname, tgname, rolls[0]);
+			ntg = getCreatureByName(p);
+
+			if (NULL != ntg) {
+				tg = ntg;
+			}
+		}
+
+		takeDamage(tg, 0, rolls[0]);
+
+		logbuffmt("%s cast a spell on %s for %d damage\n", cr->CRFNAME, tg->CRFNAME, rolls[0]);
 	} else if (match(buf, size, "attack", p)) {
 		// TODO: BAB
 		rolls[0] = die(20);
+
+		if (p != be) {
+			for (++p; p <= be && ' ' == *p; ++p);
+
+			ntg = getCreatureByName(p);
+
+			if (NULL != ntg) {
+				tg = ntg;
+			}
+		}
 
 		if (20 == rolls[0]) {
 			crit = 1;
@@ -262,18 +357,18 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 			rolls[1] = die(8) + cr->ab_str.mod;
 			rolls[1] *= crit;
 
-			tg->hp.current = max(-10, tg->hp.current - rolls[1]);
+			takeDamage(tg, 0, rolls[1]);
 		}
 
 		switch (crit) {
 		case 0:
-			logbuffmt("%s missed eir attack against %s\n", crname, tgname);
+			logbuffmt("%s missed eir attack against %s\n", cr->CRFNAME, tg->CRFNAME);
 			break;
 		case 1:
-			logbuffmt("%s attacked %s for %d damage\n", crname, tgname, rolls[1]);
+			logbuffmt("%s attacked %s for %d damage\n", cr->CRFNAME, tg->CRFNAME, rolls[1]);
 			break;
 		case 2:
-			logbuffmt("%s strongly attacked %s for %d damage\n", crname, tgname, rolls[1]);
+			logbuffmt("%s strongly attacked %s for %d damage\n", cr->CRFNAME, tg->CRFNAME, rolls[1]);
 			break;
 		}
 	} else {
@@ -282,6 +377,22 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 	}
 
 	nextTurn();
+
+	if (!Victory) {
+		List *it;
+		bool teamsUp[] = {false, false};
+
+		flux_list_foreach(&turn, turn, it, cr) {
+			if (0 == cr->down) {
+				teamsUp[cr->team] = true;
+			}
+		}
+
+		if (!teamsUp[0] || !teamsUp[1]) {
+			logbuffmt("Someone won I think, who knows who\n");
+			Victory = true;
+		}
+	}
 
 	return 0;
 }
@@ -292,6 +403,11 @@ void ready_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	cr = cf->cr;
 	R9tag *cur = NULL;
 	List *it;
+
+	if (Victory) {
+		s9error(&f->s->c->ctx, tag, "Victory");
+		return;
+	}
 
 	if (cr == activeTurn()) {
 		goto done;
@@ -452,7 +568,7 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	cf++;
 	f	= &cf->file;
 
-	f->st.name	= "str_mod";
+	f->st.name	= "str.mod";
 	f->st.mode	= 0400;
 	f->ev	= &abScoreEv;
 
@@ -466,7 +582,7 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	cf++;
 	f	= &cf->file;
 
-	f->st.name	= "dex_mod";
+	f->st.name	= "dex.mod";
 	f->st.mode	= 0400;
 	f->ev	= &abScoreEv;
 
@@ -480,7 +596,7 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	cf++;
 	f	= &cf->file;
 
-	f->st.name	= "con_mod";
+	f->st.name	= "con.mod";
 	f->st.mode	= 0400;
 	f->ev	= &abScoreEv;
 
@@ -494,7 +610,7 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	cf++;
 	f	= &cf->file;
 
-	f->st.name	= "int_mod";
+	f->st.name	= "int.mod";
 	f->st.mode	= 0400;
 	f->ev	= &abScoreEv;
 
@@ -508,7 +624,7 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	cf++;
 	f	= &cf->file;
 
-	f->st.name	= "wis_mod";
+	f->st.name	= "wis.mod";
 	f->st.mode	= 0400;
 	f->ev	= &abScoreEv;
 
@@ -522,7 +638,7 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	cf++;
 	f	= &cf->file;
 
-	f->st.name	= "cha_mod";
+	f->st.name	= "cha.mod";
 	f->st.mode	= 0400;
 	f->ev	= &abScoreEv;
 
@@ -564,7 +680,26 @@ void ctl_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 }
 
 int ctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
-	printf("%.*s\n", size, buf);
+	uint8_t *p;
+
+	if (match(buf, size, "reset", p)) {
+		player[0].hp.current	= player[0].hp.max;
+		player[0].down = 0;
+		player[1].hp.current	= player[1].hp.max;
+		player[1].down = 0;
+		player[2].hp.current	= player[2].hp.max;
+		player[2].down = 0;
+		player[3].hp.current	= player[3].hp.max;
+		player[3].down = 0;
+		monster.hp.current	= monster.hp.max;
+		monster.down	= 0;
+		mon2.hp.current	= mon2.hp.max;
+		mon2.down	= 0;
+		Victory = false;
+		rollInitiative();
+	} else {
+		printf("%.*s\n", size, buf);
+	}
 
 	return 0;
 }
@@ -613,7 +748,7 @@ R9fileEv ctlEv = {
 
 R9file root = {
 	.st = {
-		.qid	= {.type = C9qtdir, .path = 0xF000000000000000},
+		.qid	= {.type = C9qtdir, .path = 0xF000000000000000LL},
 		.size	= 0,
 		.name	= ".",
 		.mode	= C9stdir | 0500,
@@ -621,7 +756,7 @@ R9file root = {
 	}
 }, ctl = {
 	.st = {
-		.qid	= {.path	= 0xF000000000000000},
+		.qid	= {.path	= 0xF000000000000000LL},
 		.size	= 0,
 		.name	= "ctl",
 		.mode	= 0600,
@@ -630,7 +765,7 @@ R9file root = {
 	,.ev	= &ctlEv
 }, build_ts = {
 	.st = {
-		.qid	= {.path	= 0xF000000000000001},
+		.qid	= {.path	= 0xF000000000000001LL},
 		.size	= 0,
 		.name	= "build_ts",
 		.mode	= 0400,
@@ -639,7 +774,7 @@ R9file root = {
 	,.ev	= &buildEv
 }, pid = {
 	.st = {
-		.qid	= {.path	= 0xF000000000000002},
+		.qid	= {.path	= 0xF000000000000002LL},
 		.size	= 0,
 		.name	= "pid",
 		.mode	= 0400,
@@ -648,7 +783,7 @@ R9file root = {
 	,.ev	= &pidEv
 }, log_f = {
 	.st = {
-		.qid	= {.path	= 0xF000000000000003}
+		.qid	= {.path	= 0xF000000000000003LL}
 		,.size	= 0
 		,.name	= "log"
 		,.mode	= 0400
@@ -656,31 +791,6 @@ R9file root = {
 	}
 	,.ev	= &logEv
 };
-
-#define MAX_CREATURES	(1 << 16)
-#define QID_TYPE_MASK	(0xF000000000000000LL)
-#define QID_FILE_MASK	(0x00000000000000FFLL)
-#define QID_ID_MASK	(0x0000000000FFFF00LL)
-
-// N___ ____ __II IISS
-
-struct Creature *getCreatureFromFile(R9file * rf, uint32_t *idout) {
-	struct CreatureFile *cf;
-	C9qid	* q = &rf->st.qid;
-	uint32_t id = (~QID_ID_MASK & q->path);
-
-	if (C9qtdir == q->type && (MAX_CREATURE_FILES > id)) {
-		cf	= dill_cont(rf, struct CreatureFile, file);
-
-		if (NULL != idout) {
-			*idout = id;
-		}
-
-		return cf->cr;
-	}
-
-	return NULL;
-}
 
 int r9list_tmp(R9fid *f, C9stat **st) {
 	int i = CREATURE_HP;
@@ -719,8 +829,9 @@ int r9list_tmp(R9fid *f, C9stat **st) {
 
 			flux_list_foreach(&turn, turn, it, cur) {
 				// TODO: use proper list of all creatures
-				if (cr->team == cur->team) {
+				if (cr->team == cur->team && cr != cur) {
 					st[i] = &cur->files[CREATURE_ROOT].file.st;
+					++i;
 				}
 			}
 			return i;
@@ -733,6 +844,7 @@ int r9list_tmp(R9fid *f, C9stat **st) {
 				// TODO: use proper list of all creatures
 				if (cr->team != cur->team) {
 					st[i] = &cur->files[CREATURE_ROOT].file.st;
+					++i;
 				}
 			}
 			return i;
@@ -740,22 +852,6 @@ int r9list_tmp(R9fid *f, C9stat **st) {
 	}
 
 	return -1;
-}
-
-#define streq(a, b) (0 == strcmp((a), (b)))
-
-R9file *getCreatureByName(const uint8_t * str) {
-	List *it;
-	struct Creature *cur;
-
-	flux_list_foreach(&turn, turn, it, cur) {
-		// TODO: use proper list of all creatures
-		if (streq(str, cur->files[CREATURE_ROOT].file.st.name)) {
-			return &cur->files[CREATURE_ROOT].file;
-		}
-	}
-
-	return NULL;
 }
 
 R9file *r9seek_tmp(R9file *rf, R9session *s, const char *str) {
@@ -768,7 +864,7 @@ R9file *r9seek_tmp(R9file *rf, R9session *s, const char *str) {
 	int i;
 
 	if (&root == rf) {
-		crf = getCreatureByName(str);
+		crf = getCreatureRootFileByName(str);
 		if (NULL != crf) {
 			return crf;
 		} else if (streq(str, ctl.st.name)) {
@@ -796,7 +892,7 @@ R9file *r9seek_tmp(R9file *rf, R9session *s, const char *str) {
 		}
 
 		if (CREATURE_FRIENDS == id || CREATURE_ENEMIES == id) {
-			crf = getCreatureByName(str);
+			crf = getCreatureRootFileByName(str);
 			return crf;
 		}
 	}
@@ -839,9 +935,12 @@ int main(void) {
 	R9srv * srv9 = flux_r9getMainSrv();
 	flux_r9srvInit(srv9, r9seek_tmp, r9list_tmp);
 
-	initCreature(&player, 0);
+	initCreature(player, 0);
 	initCreature(&monster, 1);
 	initCreature(&mon2, 2);
+	initCreature(player + 1, 3);
+	initCreature(player + 2, 4);
+	initCreature(player + 3, 5);
 
 	monster.files[0].file.st.name = "monster";
 	mon2.CRFNAME	= "mon2";
@@ -859,24 +958,34 @@ int main(void) {
 	setScore(&monster.ab_cha, 8);
 
 	// HD 2d8
-	monster.hp.current = 9;
-	monster.hp.max	= 16;
+	mon2.hp.current = 9;
+	mon2.hp.max	= 16;
 
-	monster.ac = -1;
+	mon2.ac = -1;
 
-	setScore(&monster.ab_str, 24);
-	setScore(&monster.ab_dex, 12);
-	setScore(&monster.ab_con, 11);
-	setScore(&monster.ab_int, 10);
-	setScore(&monster.ab_wis, 9);
-	setScore(&monster.ab_cha, 8);
+	setScore(&mon2.ab_str, 24);
+	setScore(&mon2.ab_dex, 12);
+	setScore(&mon2.ab_con, 11);
+	setScore(&mon2.ab_int, 10);
+	setScore(&mon2.ab_wis, 9);
+	setScore(&mon2.ab_cha, 8);
 
 	// turn stuff
 
-	player.team = 1;
+	player[0].team = 1;
+	player[1].team = 1;
+	player[2].team = 1;
+	player[3].team = 1;
+
+	player[1].CRFNAME	= "healer";
+	player[2].CRFNAME	= "mage";
+	player[3].CRFNAME	= "thief";
 
 	dill_list_init(&turn);
-	dill_list_insert(&player.turn, &turn);
+	dill_list_insert(&player[0].turn, &turn);
+	dill_list_insert(&player[1].turn, &turn);
+	dill_list_insert(&player[2].turn, &turn);
+	dill_list_insert(&player[3].turn, &turn);
 	dill_list_insert(&monster.turn, &turn);
 	dill_list_insert(&mon2.turn, &turn);
 

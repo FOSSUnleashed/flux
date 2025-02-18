@@ -1,0 +1,17 @@
+#!/usr/bin/env rcxs
+
+. ~/repos/XS-func/inc
+
+inc list
+
+char	= <={%first $1 monster}
+act	= <={%first $2 attack}
+
+forever {
+	while {999 read /^$char^/ready >[2]/dev/null} {
+		trgs	= `` \n {999 ls /^$char^/enemies/}
+
+		999 write /^$char^/act <<< <={%flatten ' ' $act <={%list.rand $trgs}}
+	}
+	sleep 10
+}

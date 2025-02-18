@@ -454,7 +454,7 @@ void srv_proc(C9ctx * ctx, C9t * t) {
 			while (left > 1 && !rc) {
 				for (next = data; left && *next && '\n' != *next; ++next, --left);
 
-				rc = f->file->ev->on_linewrite(f, next - data, data, &errstr);
+				rc = f->file->ev->on_linewrite(f, next - data - 1, data, &errstr);
 
 				for (; left && *next && '\n' == *next; ++next, --left);
 

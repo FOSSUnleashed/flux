@@ -62,7 +62,7 @@ int flux_bufeq(const uint8_t * a, const uint8_t * aend, const uint8_t * str, uin
 		return -257;
 	}
 
-	for (; a < aend && 0 == res && *str; ++a, ++str) {
+	for (; a <= aend && 0 == res && *str; ++a, ++str) {
 		res = *a - *str;
 	}
 

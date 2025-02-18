@@ -52,8 +52,9 @@ struct Creature {
 		uint8_t ranks;
 	} skills;
 
-	uint8_t hd;
-	int8_t ac, init, init_roll, team;
+	// 1/2 1/3 1/4 1/6 1/10 250+ 127 
+	// negative hd and cr indicate 1/abs(n) eg: -2 == 1/2 ; -4 == 1/4
+	int8_t ac, init, init_roll, team, hd, cr;
 
 	struct {   
 		uint8_t level;
@@ -69,7 +70,17 @@ struct Creature {
 	uint16_t tag_cnt;
 
 	List turn;
+
+	Bit down : 2; // 0 == alive ; 1 == unconcious/stable ; 2 == dying ; 3 == dead
 };
+
+enum DamageType {
+	TYPE_SLASHING
+	,TYPE_BLUDGEONING
+	,TYPE_PIERCING
+};
+
+typedef enum DamageType DamageType;
 
 typedef struct Creature Creature;
 typedef struct AbScore AbScore;

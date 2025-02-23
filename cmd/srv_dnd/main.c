@@ -310,9 +310,23 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 	} else if (match(buf, size, "heal", p)) {
 		rolls[0] = dice(2, 12);
 
-		cr->hp.current = min(cr->hp.current + rolls[0], cr->hp.max);
+		if (p != be) {
+			for (++p; p <= be && ' ' == *p; ++p);
 
-		logbuffmt("%s healed %d hit points %d %02x(%c)\n", cr->CRFNAME, rolls[0], be - p, *be, *be);
+			ntg = getCreatureByName(p);
+
+			if (NULL != ntg) {
+				tg = ntg;
+			}
+		}
+
+		if (tg->team != cr->team) {
+			tg = cr;
+		}
+
+		tg->hp.current = min(tg->hp.current + rolls[0], tg->hp.max);
+
+		logbuffmt("%s healed %s %d hit points %d %02x(%c)\n", cr->CRFNAME, tg->CRFNAME, rolls[0], be - p, *be, *be);
 	} else if (match(buf, size, "spell", p)) {
 		rolls[0] = dice(2, 6) + 2;
 

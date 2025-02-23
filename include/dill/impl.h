@@ -25,6 +25,8 @@
 #ifndef LIBDILLIMPL_H_INCLUDED
 #define LIBDILLIMPL_H_INCLUDED
 
+#include <dill/iol.h>
+
 /******************************************************************************/
 /*  Handles                                                                   */
 /******************************************************************************/
@@ -79,6 +81,21 @@ struct dill_msock_vfs {
 #if !defined DILL_DISABLE_RAW_NAMES
 #define msock_vfs dill_msock_vfs
 #define msock_type dill_msock_type
+#endif
+
+// Adoption
+
+dill_handle dill_fd2bsock(int fd);
+dill_handle dill_fd2msock(int fd);
+
+dill_handle dill__fd2bsock(int fd); // No fd_own()
+dill_handle dill__fd2msock(int fd); // No fd_own()
+
+#if !defined DILL_DISABLE_RAW_NAMES
+#define fd2bsock dill_fd2bsock
+#define fd2msock dill_fd2msock
+#define _fd2bsock dill__fd2bsock
+#define _fd2msock dill__fd2msock
 #endif
 
 #endif

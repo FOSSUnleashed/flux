@@ -23,6 +23,8 @@ FLUX_	= \
 	ulid\
 	base32\
 	fmt\
+	adopt\
+	spawn\
 	WjCryptLib_Aes\
 	WjCryptLib_AesCbc\
 	WjCryptLib_AesCtr\

@@ -9,7 +9,11 @@ act	= <={%first $2 attack}
 
 forever {
 	while {999 read /^$char^/ready >[2]/dev/null} {
-		trgs	= `` \n {999 ls /^$char^/enemies/}
+		if {~ $act heal cure*} {
+			trgs	= `` \n {999 ls /^$char^/friends/}
+		} else {
+			trgs	= `` \n {999 ls /^$char^/enemies/}
+		}
 
 		999 write /^$char^/act <<< <={%flatten ' ' $act <={%list.rand $trgs}}
 	}

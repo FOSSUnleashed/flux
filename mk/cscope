@@ -1,7 +1,7 @@
 # Note: shell is sh
 
 cscope.files:V:
-	{ echo $CPPFLAGS; find -type f -name '*.[chly]' -o -name '*.[ch].inc'; }  > $target
+	{ echo $CPPFLAGS; find -xdev -type f -name '*.[chly]' -o -name '*.[ch].inc'; }  > $target
 	cscope -l <<<'' >/dev/null 2>/dev/null
 
 all:V: cscope.files

@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
 	forever {
 		cli	= tcp_accept(srv, NULL, -1);
 
-		c = allocClient(n9srv, cli);
+		c = allocClient(n9srv, cli, tcp_close);
 
 		if_slow (NULL == c) {
 			tcp_close(cli, now() + 400);

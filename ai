@@ -6,16 +6,23 @@ inc list
 
 char	= <={%first $1 monster}
 act	= <={%first $2 attack}
+type	= <={%first $3 wolf}
+team	= <={%first $4 0}
 
 forever {
+	if {!999 stat $char >/dev/null >[2]/dev/null} {
+		# TODO: fix team
+		echo <={%flatten ' ' spawn $char $team^0 $type} | tee /dev/stderr | 999 write ctl >[2]/dev/null || sleep 4
+	}
+
 	while {999 read /^$char^/ready >[2]/dev/null} {
 		if {~ $act heal cure*} {
-			trgs	= `` \n {999 ls /^$char^/friends/}
+			trgs	= `` \n {999 ls /^$char^/friends/} $char
 		} else {
 			trgs	= `` \n {999 ls /^$char^/enemies/}
 		}
 
-		999 write /^$char^/act <<< <={%flatten ' ' $act <={%list.rand $trgs}}
+		999 write /^$char^/act <<< <={%flatten ' ' $act <={%first <={%list.rand $trgs}}}
 	}
 	sleep 10
 }

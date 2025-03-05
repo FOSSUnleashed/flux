@@ -120,7 +120,7 @@ int main(void) {
 	for (i = 4; i > 0; --i) {
 		cli	= tcp_accept(srv, NULL, -1);
 
-		c = allocClient(srv9, cli);
+		c = allocClient(srv9, cli, tcp_close);
 
 		if_slow (NULL == c) {
 			tcp_close(cli, now() + 400);

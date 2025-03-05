@@ -4,6 +4,10 @@
 #include <dill/util_rbtree.h>
 #include <stdio.h>
 #include <assert.h>
+#include <flux/str.h>
+#include <flux/list.h>
+
+int sw_list(R9fid *, C9stat **);
 
 R9file *sw_on_create(R9fid *, const char * name, uint32_t perms);
 
@@ -30,26 +34,165 @@ R9fileEv ramDirEv = {
 	,.on_remove	= sw_on_remove
 };
 
-R9file root = {
-	.st = {
-		.qid = {.type = C9qtdir}
-		,.uid = UN
-		,.gid	= UN
-		,.muid	= UN
-		,.mode	= 0500 | C9stdir
-		,.name	= "."
-	}
-}, output = {
-	.st = {
-		.qid	= {.type = C9qtdir, .path = 1}
-		,.uid	= UN
-		,.gid	= UN
-		,.muid	= UN
-		,.mode	= 0700 | C9stdir
-		,.name	= "output"
-	}
-	,.ev	= &ramDirEv
+struct sw_job_history {
+	uint64_t ts;
+	List node;
+	// Who
+	// done_option
+	// Task
 };
+
+struct sw_job {
+	List history;
+	// input_file_tree
+
+	// Initial Input
+};
+
+enum {
+	SW_WORKSPACE_ROOT
+	,SW_WORKSPACE_OUTPUT
+	,SW_WORKSPACE_INPUT
+	,SW_WORKSPACE_CTL
+	,SW_WORKSPACE_CTL_READY
+	,SW_WORKSPACE_CTL_CONFIG
+	,SW_WORKSPACE_CTL_HISTORY
+	,SW_WORKSPACE_CTL_SPACE // prints the workspace ID
+	,SW_WORKSPACE_CTL_DONE
+	,SW_WORKSPACE_CTL_OPTIONS // What options are available for done
+	,SW_WORKSPACE_FILES
+};
+
+struct sw_workspace {
+	rbtree_node node; // val is sint64
+
+	R9file files[SW_WORKSPACE_FILES];
+
+	R9fileEv root_ev; // used for validation only
+
+	// Task *task; // Contains the /input file tree and history information
+}; // R9session
+
+typedef struct sw_workspace sw_workspace;
+
+sw_workspace main_workspace;
+
+sw_workspace *sw_wsFromSession(R9session * s) {
+	sw_workspace *ws;
+
+	ws = dill_cont(s->fid.file, sw_workspace, files[SW_WORKSPACE_ROOT]);
+
+	assert(&main_workspace == ws);
+
+	// Validation that we have a workspace pointer
+	if (&ws->root_ev == s->fid.file->ev) {
+		return ws;
+	}
+
+	return NULL;
+}
+
+void initWorkspace(sw_workspace *ws) {
+	flux_bufzero(ws, ws + 1);
+
+	R9file *rf;
+
+	ws->node.val = 0; // TODO: create ID
+
+	rf = ws->files + SW_WORKSPACE_ROOT;
+
+	rf->st.qid	= (C9qid){.type = C9qtdir};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0500 | C9stdir;
+	rf->st.name	= ".";
+
+	rf->ev	= &ws->root_ev;
+
+	rf = ws->files + SW_WORKSPACE_OUTPUT;
+
+	rf->st.qid	= (C9qid){.type = C9qtdir, .path = SW_WORKSPACE_OUTPUT};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0700 | C9stdir;
+	rf->st.name	= "output";
+
+	rf->ev	= &ramDirEv;
+
+	rf = ws->files + SW_WORKSPACE_INPUT;
+
+	rf->st.qid	= (C9qid){.type = C9qtdir, .path = SW_WORKSPACE_INPUT};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0500 | C9stdir;
+	rf->st.name	= "input";
+
+	rf = ws->files + SW_WORKSPACE_CTL;
+
+	rf->st.qid	= (C9qid){.type = C9qtdir, .path = SW_WORKSPACE_CTL};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0500 | C9stdir;
+	rf->st.name	= "ctl";
+
+	rf = ws->files + SW_WORKSPACE_CTL_READY;
+
+	rf->st.qid	= (C9qid){.path = SW_WORKSPACE_CTL_READY};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0400;
+	rf->st.name	= "ready";
+
+	rf = ws->files + SW_WORKSPACE_CTL_CONFIG;
+
+	rf->st.qid	= (C9qid){.path = SW_WORKSPACE_CTL_CONFIG};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0600;
+	rf->st.name	= "config";
+
+	rf = ws->files + SW_WORKSPACE_CTL_OPTIONS;
+
+	rf->st.qid	= (C9qid){.path = SW_WORKSPACE_CTL_OPTIONS};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0400;
+	rf->st.name	= "options";
+
+	rf = ws->files + SW_WORKSPACE_CTL_DONE;
+
+	rf->st.qid	= (C9qid){.path = SW_WORKSPACE_CTL_DONE};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0200;
+	rf->st.name	= "done";
+
+	rf = ws->files + SW_WORKSPACE_CTL_SPACE;
+
+	rf->st.qid	= (C9qid){.path = SW_WORKSPACE_CTL_SPACE};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0400;
+	rf->st.name	= "space";
+
+	rf = ws->files + SW_WORKSPACE_CTL_HISTORY;
+
+	rf->st.qid	= (C9qid){.path = SW_WORKSPACE_CTL_HISTORY};
+	rf->st.uid	= UN;
+	rf->st.gid	= UN;
+	rf->st.muid	= UN;
+	rf->st.mode	= 0400;
+	rf->st.name	= "history";
+}
 
 struct sw_ramfile {
 	rbtree_node node;
@@ -62,12 +205,26 @@ struct sw_ramfile {
 	uint16_t sz;
 };
 
+#define RAMFILECOUNT (1 << 10)
+
 typedef struct sw_ramfile sw_ramfile;
 
-sw_ramfile files[1024];
+sw_ramfile files[RAMFILECOUNT];
 
 struct dill_rbtree ramfs, free_ramfs;
 uint16_t file_nodes = 0;
+
+sw_ramfile *getRamFile(R9file *rf) {
+	sw_ramfile *end = files + RAMFILECOUNT, *ram = NULL;
+
+	if ((sw_ramfile *)rf > files && end > (sw_ramfile *)rf) {
+		ram = dill_cont(rf, sw_ramfile, file);
+
+		// TODO sanity check index
+	}
+
+	return ram;
+}
 
 void sw_debug(char c) {
 	rbtree_node *it;
@@ -157,8 +314,6 @@ sw_ramfile *sw_new_ramfile(uint32_t mode) {
 
 		file->file.st.qid.path = file->node.val = 0xFFFFF + file_nodes;
 
-		sw_init_ramfile(file, mode);
-
 		file_nodes++;
 	} else {
 		it = dill_rbtree_first(&free_ramfs);
@@ -170,6 +325,8 @@ sw_ramfile *sw_new_ramfile(uint32_t mode) {
 	if (NULL == file) {
 		return NULL;
 	}
+
+	sw_init_ramfile(file, mode);
 
 	dill_rbtree_insert(&ramfs, file->node.val, &file->node);
 
@@ -261,7 +418,7 @@ void sw_on_write(R9fid* f, C9tag tag, uint64_t offset, uint32_t size, uint8_t *b
 	s9write(&f->s->c->ctx, tag, size);
 }
 
-R9file *sw_on_create(R9fid * f, const char * name, uint32_t mode) { // TODO: adjust library, check to see if file exists
+R9file *sw_on_create(R9fid * f, const char * name, uint32_t mode) {
 	sw_ramfile * file;
 
 	printf("CREATE: %s\n", name);
@@ -281,6 +438,8 @@ R9file *sw_on_create(R9fid * f, const char * name, uint32_t mode) { // TODO: adj
 
 	file->file.st.mode = mode;
 
+	file->parent = f->file;
+
 	return &file->file;
 }
 
@@ -288,20 +447,23 @@ void sw_on_clunk(R9fid * f) {
 }
 
 bool sw_on_remove(R9fid * f) {
-	if (NULL == f->file || &output == f->file) {
-		if (NULL == f->file) {
-			printf("NULL\n");
-		} else {
-			printf("OUTPUT\n");
-		}
+	sw_ramfile * file = dill_cont(f->file, sw_ramfile, file);
+
+	if (NULL == file) {
 		return false;
 	}
-
-	sw_ramfile * file = dill_cont(f->file, sw_ramfile, file);
 
 	assert(file >= files && files + 1024 > file);
 
 	sw_debug('R');
+
+	if (file->file.st.qid.type & C9qtdir) {
+		int children = sw_list(f, NULL);
+
+		if (children) {
+			return false;
+		}
+	}
 
 	file->file.st.mode	= 0;
 	file->file.st.qid.type	= 0;
@@ -325,52 +487,112 @@ bool sw_on_remove(R9fid * f) {
 int sw_list(R9fid * f, C9stat ** st) {
 	int i = 0;
 	rbtree_node *it;
+	sw_ramfile *ram = getRamFile(f->file);
+	sw_workspace *ws = sw_wsFromSession(f->s);
 
-	if (&root == f->file) {
-		st[0] = &output.st;
+	assert(&main_workspace == ws);
+
+	if (ws->files + SW_WORKSPACE_ROOT == f->file) {
+		st[0] = &ws->files[SW_WORKSPACE_OUTPUT].st;
+		st[1] = &ws->files[SW_WORKSPACE_INPUT].st;
+		st[2] = &ws->files[SW_WORKSPACE_CTL].st;
 		
-		return 1;
-	} else if (&output == f->file) {
+		return 3;
+	} else if (ws->files + SW_WORKSPACE_CTL == f->file) {
+		st[0] = &ws->files[SW_WORKSPACE_CTL_READY].st;
+		st[1] = &ws->files[SW_WORKSPACE_CTL_DONE].st;
+		st[2] = &ws->files[SW_WORKSPACE_CTL_OPTIONS].st;
+		st[3] = &ws->files[SW_WORKSPACE_CTL_CONFIG].st;
+		st[4] = &ws->files[SW_WORKSPACE_CTL_SPACE].st;
+		st[5] = &ws->files[SW_WORKSPACE_CTL_HISTORY].st;
+		
+		return 6;
+	} else if ((ws->files + SW_WORKSPACE_OUTPUT) == f->file || &ram->file == f->file) {
 		it = dill_rbtree_first(&ramfs);
 
-		for (; it; ++i, it = dill_rbtree_next(&ramfs, it)) {
+		for (; it; it = dill_rbtree_next(&ramfs, it)) {
 			sw_ramfile * file = dill_cont(it, sw_ramfile, node);
-			st[i] = &file->file.st;
+
+			if (file->parent == f->file) {
+				if (NULL != st) {
+					st[i] = &file->file.st;
+				}
+				i++;
+			}
 		}
 
 		return i;
+	} else if (C9qtdir & f->file->st.qid.type) {
+		return 0;
 	}
 
 	return -1;
 }
 
+sw_ramfile *sw_subSeek(sw_ramfile *parent, const char * name, sw_workspace *ws) {
+	sw_ramfile * file = NULL;
+	rbtree_node *it;
+	R9file *pf	= (NULL == parent) ? ws->files + SW_WORKSPACE_OUTPUT : &parent->file;
+
+	it = dill_rbtree_first(&ramfs);
+
+	for (; it; it = dill_rbtree_next(&ramfs, it)) {
+		file = dill_cont(it, sw_ramfile, node);
+
+		if (file->parent == pf && 0 == strcmp(file->file.st.name, name)) {
+			break;
+		}
+
+		file = NULL;
+	}
+
+	return file;
+}
+
 R9file *sw_seek(R9file * f, R9session * s, const char * name) {
-	if (&root == f) {
-		if (0 == strcmp(output.st.name, name)) {
-			return &output;
+	sw_ramfile *ram = getRamFile(f);
+	sw_workspace *ws = sw_wsFromSession(s);
+
+	assert(&main_workspace == ws);
+
+	if (NULL != ram || (ws->files + SW_WORKSPACE_OUTPUT) == f) {
+		ram = sw_subSeek(ram, name, ws);
+
+		return (NULL == ram) ? NULL : &ram->file;
+	} else if ((ws->files + SW_WORKSPACE_ROOT) == f) {
+		if (0 == strcmp(ws->files[SW_WORKSPACE_OUTPUT].st.name, name)) {
+			return ws->files + SW_WORKSPACE_OUTPUT;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_INPUT].st.name, name)) {
+			return ws->files + SW_WORKSPACE_INPUT;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_CTL].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL;
 		}
-	} else if (&output == f) { // TODO: check to see if it's a sw_ramfile
-		sw_ramfile * file = NULL;
-		rbtree_node *it;
-
-		it = dill_rbtree_first(&ramfs);
-
-		for (; it; it = dill_rbtree_next(&ramfs, it)) {
-			file = dill_cont(it, sw_ramfile, node);
-
-			if (0 == strcmp(file->file.st.name, name)) {
-				break;
-			}
-
-			file = NULL;
+	} else if ((ws->files + SW_WORKSPACE_CTL) == f) {
+		if (0 == strcmp(ws->files[SW_WORKSPACE_CTL_OPTIONS].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL_OPTIONS;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_CTL_READY].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL_READY;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_CTL_CONFIG].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL_CONFIG;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_CTL_SPACE].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL_SPACE;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_CTL_DONE].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL_DONE;
+		} else if (0 == strcmp(ws->files[SW_WORKSPACE_CTL_HISTORY].st.name, name)) {
+			return ws->files + SW_WORKSPACE_CTL_HISTORY;
 		}
-
-		return file ? &file->file : NULL;
 	}
 
 	return NULL;
 }
 
+int init = 0;
+
 void sw_attach(R9session *s) {
-	s->fid.file = &root;
+	if (!init) {
+		initWorkspace(&main_workspace);
+		init = 1;
+	}
+
+	s->fid.file = main_workspace.files + SW_WORKSPACE_ROOT;
 }

@@ -1,10 +1,13 @@
 #pragma once
 
 #include <r9.h>
+#include <flux/list.h>
 
 #define MAX_CLASSES 32
 #define CRROOTF	files[CREATURE_ROOT].file
 #define CRFNAME	CRROOTF.st.name
+
+#define MOD(n) ((n) / 2 - 5)
 
 enum {
 	CREATURE_ROOT
@@ -70,6 +73,8 @@ struct Creature {
 	uint16_t tag_cnt;
 
 	List turn;
+
+	uint8_t buffer[1 << 9], *b, *be;
 
 	Bit down : 2; // 0 == alive ; 1 == unconcious/stable ; 2 == dying ; 3 == dead
 };

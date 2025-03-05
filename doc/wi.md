@@ -26,6 +26,8 @@
 ### Stream/overlay ideas
 
 * !suggest Suggestion box command
+* !followage -- Command to print how long a user has followed
+* !lurk
 * !today Stream task command (not pomo mode)
 * !task* Stream task commands (pomo mode)
 * Group Luanti server?  TMW server/guild?

@@ -6,6 +6,7 @@
 #define flux_bufend(in, end) flux_bufindex(in, end, 0)
 #define flux_buferror(in, end, err) flux_bufwrite(in, end, strerror_r(err), 512)
 #define flux_bufzero(in, end) flux_bufset((uint8_t *)(in), (uint8_t *)(end), 0)
+#define flux_bufadvance(p, end, cond) for (; p < end && (cond); ++p)
 
 uint8_t * flux_bufindexnull(const uint8_t * in, const uint8_t * end, uint8_t ch);
 uint8_t * flux_bufindex(const uint8_t * in, const uint8_t * end, uint8_t ch);

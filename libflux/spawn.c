@@ -4,6 +4,8 @@
 #include <sys/resource.h>
 #include <errno.h>
 
+#if 0
+
 static int spawn(const char ** argv, const char ** env, int *fds_out);
 
 int flux_mspawn(const char ** argv, const char ** env, dill_handle *hout) {
@@ -135,3 +137,5 @@ static int spawn(const char ** argv, const char ** env, int *fds_out) {
 	errno = err;
 	return -1;
 }
+
+#endif

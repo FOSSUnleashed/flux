@@ -14,8 +14,10 @@
 
 #include <stdio.h>
 
-char UN[] = "R", buf[1 << 14];
-uint8_t logbuf[1 << 14];
+#define BSZ (1 << 15)
+
+char UN[] = "R", buf[BSZ];
+uint8_t logbuf[BSZ];
 
 isaac32_ctx rng;
 List turn, *T = &turn;
@@ -26,6 +28,12 @@ bool Victory = false;
 size_t logbuffmt(const char * fmt, ...);
 
 struct Creature *activeTurn();
+
+const uint8_t *bufstrlen(const uint8_t *buf) {
+	for (; *buf; ++buf);
+
+	return buf;
+}
 
 /*
 * **hp**: Int[2]:State Effective current and maximum HP, space delim'd
@@ -64,13 +72,14 @@ struct Creature *activeTurn();
 
 // N___ ____ __II IISS
 
-Creature *getCreatureByName(const uint8_t * str) {
+Creature *getCreatureByName(const uint8_t * str, const uint8_t * strend) {
 	List *it;
 	struct Creature *cur;
+	uint8_t *p;
 
 	flux_list_foreach(&turn, turn, it, cur) {
 		// TODO: use proper list of all creatures
-		if (streq(str, cur->files[CREATURE_ROOT].file.st.name)) {
+		if (0 == flux_bufeq(str, strend, cur->files[CREATURE_ROOT].file.st.name, &p) && strend == p) {
 			return cur;
 		}
 	}
@@ -79,7 +88,7 @@ Creature *getCreatureByName(const uint8_t * str) {
 }
 
 R9file *getCreatureRootFileByName(const uint8_t * str) {
-	Creature * cr = getCreatureByName(str);
+	Creature * cr = getCreatureByName(str, bufstrlen(str) - 1);
 
 	return (NULL == cr) ? NULL : &cr->files[CREATURE_ROOT].file;
 }
@@ -111,8 +120,6 @@ void takeDamage(Creature *cr, DamageType dt, uint16_t amt) {
 		logbuffmt("%s has fallen down!\n", cr->CRFNAME);
 	}
 }
-
-Creature player[4], monster, mon2;
 
 uint8_t *flux_bufwriteint16(uint8_t *buf, uint8_t *bufend, int16_t val) {
 	if (NULL == buf || NULL == bufend || buf > bufend) {
@@ -181,6 +188,10 @@ void flushReady(struct Creature *cr) { // Make this part of the library, takes a
 	List * it;
 	R9tag	* cur;
 
+	if (NULL == cr) { // true when Victory, occasionally
+		return;
+	}
+
 	R9file *rf = &(cr->files + CREATURE_READY)->file;
 
 	r9tag_foreach(&cr->gate_tags, it, cur) {
@@ -199,7 +210,9 @@ void flushReady(struct Creature *cr) { // Make this part of the library, takes a
 		}
 	}
 
-	logbuffmt("It is now %s's turn\n", cr->CRFNAME);
+	if (!Victory) {
+		logbuffmt("It is now %s's turn\n", cr->CRFNAME);
+	}
 }
 
 uint16_t die(uint16_t sides) {
@@ -239,6 +252,8 @@ void rollInitiative() {
 		T = &high->turn;
 		logbuffmt("First turn: %s\n", high->CRFNAME);
 	}
+
+	flushReady(activeTurn());
 }
 
 bool creatureAbleToAct(Creature *cr) {
@@ -262,7 +277,7 @@ void nextTurn() {
 		}
 	} while (&cr->turn != T);
 
-	if (&turn == T) {
+	if (&turn == T || Victory) {
 		// we have no-one to play
 		return;
 	}
@@ -273,6 +288,10 @@ void nextTurn() {
 }
 
 struct Creature *activeTurn() {
+	if (Victory) {
+		return NULL;
+	}
+
 	if (&turn == T) {
 		nextTurn();
 
@@ -287,7 +306,7 @@ struct Creature *activeTurn() {
 #define match(a, sz, b, p) (0 == flux_bufeq(a, a + sz, b, &p))
 
 int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
-	struct Creature *cr, *tg, *ntg;
+	struct Creature *cr, *tg = NULL;
 	struct CreatureFile *cf = dill_cont(f->file, struct CreatureFile, file);
 	cr = cf->cr;
 	uint16_t rolls[2];
@@ -298,13 +317,6 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 		return -1;
 	}
 
-	// TODO function that returns first valid enemy
-	if (cr == player || cr == player + 1 || cr == player + 2 || cr == player + 3) {
-		tg = &monster;
-	} else {
-		tg	 = player;
-	}
-
 	if (match(buf, size, "end", p)) {
 		logbuffmt("%s ended their turn with no action\n", cr->CRFNAME);
 	} else if (match(buf, size, "heal", p)) {
@@ -313,36 +325,32 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 		if (p != be) {
 			for (++p; p <= be && ' ' == *p; ++p);
 
-			ntg = getCreatureByName(p);
-
-			if (NULL != ntg) {
-				tg = ntg;
-			}
+			tg = getCreatureByName(p, be);
 		}
 
-		if (tg->team != cr->team) {
-			tg = cr;
+		if (NULL == tg) {
+			goto no_target;
 		}
-
-		tg->hp.current = min(tg->hp.current + rolls[0], tg->hp.max);
 
 		logbuffmt("%s healed %s %d hit points %d %02x(%c)\n", cr->CRFNAME, tg->CRFNAME, rolls[0], be - p, *be, *be);
+
+		tg->hp.current = min(tg->hp.current + rolls[0], tg->hp.max);
 	} else if (match(buf, size, "spell", p)) {
 		rolls[0] = dice(2, 6) + 2;
 
 		if (p != be) {
 			for (++p; p <= be && ' ' == *p; ++p);
 
-			ntg = getCreatureByName(p);
-
-			if (NULL != ntg) {
-				tg = ntg;
-			}
+			tg = getCreatureByName(p, be);
 		}
 
-		takeDamage(tg, 0, rolls[0]);
+		if (NULL == tg) {
+			goto no_target;
+		}
 
 		logbuffmt("%s cast a spell on %s for %d damage\n", cr->CRFNAME, tg->CRFNAME, rolls[0]);
+
+		takeDamage(tg, 0, rolls[0]);
 	} else if (match(buf, size, "attack", p)) {
 		// TODO: BAB
 		rolls[0] = die(20);
@@ -350,11 +358,11 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 		if (p != be) {
 			for (++p; p <= be && ' ' == *p; ++p);
 
-			ntg = getCreatureByName(p);
+			tg = getCreatureByName(p, be);
+		}
 
-			if (NULL != ntg) {
-				tg = ntg;
-			}
+		if (NULL == tg) {
+			goto no_target;
 		}
 
 		if (20 == rolls[0]) {
@@ -370,8 +378,6 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 		if (0 != crit) {
 			rolls[1] = die(8) + cr->ab_str.mod;
 			rolls[1] *= crit;
-
-			takeDamage(tg, 0, rolls[1]);
 		}
 
 		switch (crit) {
@@ -385,30 +391,44 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 			logbuffmt("%s strongly attacked %s for %d damage\n", cr->CRFNAME, tg->CRFNAME, rolls[1]);
 			break;
 		}
+
+		if (0 != crit) {
+			takeDamage(tg, 0, rolls[1]);
+		}
 	} else {
 		*errstr = "Invalid command";
 		return -1;
 	}
 
-	nextTurn();
-
 	if (!Victory) {
 		List *it;
-		bool teamsUp[] = {false, false};
+		int32_t victoriousTeam = -1;
 
 		flux_list_foreach(&turn, turn, it, cr) {
-			if (0 == cr->down) {
-				teamsUp[cr->team] = true;
+			if (cr->down) {
+				continue;
+			}
+
+			if (-1 == victoriousTeam) {
+				victoriousTeam = cr->team;
+			} else if (cr->team != victoriousTeam) {
+				victoriousTeam = -1;
+				break;
 			}
 		}
 
-		if (!teamsUp[0] || !teamsUp[1]) {
-			logbuffmt("Someone won I think, who knows who\n");
+		if (-1 != victoriousTeam) {
+			logbuffmt("Victory to team %d\n", victoriousTeam);
 			Victory = true;
 		}
 	}
 
+	nextTurn();
+
 	return 0;
+	no_target:
+	*errstr = "No valid target";
+	return -1;
 }
 
 void ready_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
@@ -460,7 +480,6 @@ R9fileEv hpEv = {
 	.on_linewrite	= act_write
 };
 
-#define MOD(n) ((n) / 2 - 5)
 #define ABS(n) ((n) > 0 ? (n) : -(n))
 
 void abScore_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
@@ -494,10 +513,8 @@ R9fileEv abilityEv = {
 	.on_shortread	= abScore_read
 };
 
-void setScore(struct AbScore *sc, uint16_t val) {
-	sc->score = val;
-	sc->mod	= MOD(val);
-}
+void setScore(struct AbScore *sc, uint16_t val);
+void setupCreatures(List * turn);
 
 void initCreature(struct Creature *cr, uint16_t id) {
 	bufzero(cr, cr + 1);
@@ -693,24 +710,87 @@ void ctl_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	s9read(&f->s->c->ctx, tag, NULL, 0);
 }
 
-int ctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
-	uint8_t *p;
+int creatureSpawn(uint8_t * name, uint8_t * nameEnd, int team, uint8_t * type, uint8_t * typeEnd);
 
-	if (match(buf, size, "reset", p)) {
-		player[0].hp.current	= player[0].hp.max;
-		player[0].down = 0;
-		player[1].hp.current	= player[1].hp.max;
-		player[1].down = 0;
-		player[2].hp.current	= player[2].hp.max;
-		player[2].down = 0;
-		player[3].hp.current	= player[3].hp.max;
-		player[3].down = 0;
-		monster.hp.current	= monster.hp.max;
-		monster.down	= 0;
-		mon2.hp.current	= mon2.hp.max;
-		mon2.down	= 0;
+int16_t flux_bufreadint16(uint8_t *buf, uint8_t *be, uint8_t **p) {
+	int sign = 1;
+	uint8_t *b = buf;
+	int16_t num = 0;
+
+	if (be == b) goto read_error;
+
+	if ('-' == *b) {
+		sign = -1;
+		++b;
+	}
+
+	if (be == b) goto read_error;
+
+	flux_bufadvance(b, be, ('0' <= *b && '9' >= *b)) {
+		num = num * 10 + (*b - '0');
+	}
+
+	if (p) {
+		*p = b;
+	}
+
+	return sign * num;
+	read_error:
+	if (p) {
+		*p = NULL;
+	}
+	return 0;
+}
+
+int ctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
+	uint8_t *p, *be = buf + size;
+	List *it;
+	Creature *cr;
+
+	if (match(buf, size, "start", p)) {
+		rollInitiative();
+	} else if (match(buf, size, "reset", p)) {
+		flux_list_foreach(T, turn, it, cr) {
+			cr->hp.current = cr->hp.max;
+			cr->down = 0;
+		}
 		Victory = false;
 		rollInitiative();
+	} else if (match(buf, size, "spawn", p)) { // spawn <name> <team> <type>
+		if (p == be) goto bad_spawn;
+
+		uint8_t *name, *nameEnd, *team, *teamEnd;
+		++p;
+
+		flux_bufadvance(p, be, (' ' == *p)); // skip space
+		if (p == be) goto bad_spawn;
+
+		name = p;
+
+		flux_bufadvance(p, be, (' ' != *p));
+		if (p == be) goto bad_spawn;
+
+		nameEnd = p;
+
+		flux_bufadvance(p, be, (' ' == *p)); // skip space
+		if (p == be) goto bad_spawn;
+
+		team = p;
+
+		flux_bufadvance(p, be, (' ' != *p));
+		if (p == be) goto bad_spawn;
+
+		teamEnd = p - 1;
+
+		flux_bufadvance(p, be, (' ' == *p)); // skip space
+		if (p == be) goto bad_spawn;
+
+		creatureSpawn(name, nameEnd, flux_bufreadint16(team, teamEnd, NULL), p, be);
+
+		return 0;
+		bad_spawn:
+		*errstr = "Invalid spawn command: spawn <name> <team> <type>";
+		return -1;
 	} else {
 		printf("%.*s\n", size, buf);
 	}
@@ -757,7 +837,7 @@ R9fileEv ctlEv = {
 }, pidEv = {
 	.on_shortread	= pid_read
 }, logEv = {
-	.on_shortread	= log_read
+	.on_read	= log_read
 };
 
 R9file root = {
@@ -934,11 +1014,13 @@ uint32_t gen() {
 	return r;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
 	handle srv, cli;
 	struct ipaddr addr;
 	R9client *c;
 	int i;
+
+	// RNG SEED
 
 	for (i = 0; i < FLUX_ISAAC_RANDSIZ; i++) {
 		rng.randrsl[i] = gen();
@@ -946,68 +1028,18 @@ int main(void) {
 
 	isaac32_init(&rng, 1);
 
+	// Creature
+
+	setupCreatures(&turn);
+
+	// SRV
+
 	R9srv * srv9 = flux_r9getMainSrv();
 	flux_r9srvInit(srv9, r9seek_tmp, r9list_tmp);
 
-	initCreature(player, 0);
-	initCreature(&monster, 1);
-	initCreature(&mon2, 2);
-	initCreature(player + 1, 3);
-	initCreature(player + 2, 4);
-	initCreature(player + 3, 5);
-
-	monster.files[0].file.st.name = "monster";
-	mon2.CRFNAME	= "mon2";
-	// HD 4d8
-	monster.hp.current = 18;
-	monster.hp.max	= 32;
-
-	monster.ac = 1;
-
-	setScore(&monster.ab_str, 24);
-	setScore(&monster.ab_dex, 12);
-	setScore(&monster.ab_con, 11);
-	setScore(&monster.ab_int, 10);
-	setScore(&monster.ab_wis, 9);
-	setScore(&monster.ab_cha, 8);
-
-	// HD 2d8
-	mon2.hp.current = 9;
-	mon2.hp.max	= 16;
-
-	mon2.ac = -1;
-
-	setScore(&mon2.ab_str, 24);
-	setScore(&mon2.ab_dex, 12);
-	setScore(&mon2.ab_con, 11);
-	setScore(&mon2.ab_int, 10);
-	setScore(&mon2.ab_wis, 9);
-	setScore(&mon2.ab_cha, 8);
-
-	// turn stuff
-
-	player[0].team = 1;
-	player[1].team = 1;
-	player[2].team = 1;
-	player[3].team = 1;
-
-	player[1].CRFNAME	= "healer";
-	player[2].CRFNAME	= "mage";
-	player[3].CRFNAME	= "thief";
-
-	dill_list_init(&turn);
-	dill_list_insert(&player[0].turn, &turn);
-	dill_list_insert(&player[1].turn, &turn);
-	dill_list_insert(&player[2].turn, &turn);
-	dill_list_insert(&player[3].turn, &turn);
-	dill_list_insert(&monster.turn, &turn);
-	dill_list_insert(&mon2.turn, &turn);
-
-	rollInitiative();
-
 	// IP stuff
 
-	ipaddr_local(&addr, NULL, 5555, 0);
+	ipaddr_local(&addr, NULL, argc > 1 ? 1129 : 5555, 0);
 
 	srv	= tcp_listen(&addr, 10);
 
@@ -1026,7 +1058,7 @@ int main(void) {
 
 		fflush(stdout);
 
-		c = allocClient(srv9, cli);
+		c = allocClient(srv9, cli, tcp_close);
 
 		if_slow (NULL == c) {
 			tcp_close(cli, now() + 400);
@@ -1053,6 +1085,8 @@ size_t logbuffmt(const char * fmt, ...) {
 
 	if (sz > 0) {
 		*psz += sz;
+
+		log_f.st.mtime	= flux_s();
 
 		return sz;
 	}

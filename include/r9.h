@@ -110,6 +110,8 @@ struct R9fileEv {
 	r9syncEv on_sync;
 	r9truncateEv on_truncate;
 	r9wstatEv on_wstat;
+
+	r9listEv on_list;
 };
 
 struct R9file {
@@ -189,6 +191,8 @@ struct R9client {
 	// session list
 	// version
 	// msz is in ctx
+
+	int (*closeSock)(int, int64_t);
 };
 
 R9rep t_prefix(C9ctx *c, C9t *t);
@@ -197,8 +201,8 @@ void resetFid(R9fid * f, C9fid fid);
 void registerSession(R9client * c, R9session * s);
 void releaseFid(R9client * c, R9fid * f);
 
-void setupClient(R9client *, handle, R9srv *);
-R9client *allocClient(R9srv *, handle);
+void setupClient(R9client *, handle, R9srv *, int (*closeSock)(int, int64_t));
+R9client *allocClient(R9srv *, handle, int (*closeSock)(int, int64_t));
 
 R9fid *seekFid(R9client * c, C9fid fid);
 R9fid *allocFid(R9client * c, C9fid fid);

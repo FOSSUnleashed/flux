@@ -52,16 +52,16 @@ A Job will continue along the graph until it reaches the outtake or final Task.
 
 * /input - file or directory (read-only)
 * /output - file or directory (ramfs)
-	* mkdir
-	* create file
-	* rename file
-	* change file mode
-	* delete file
-	* delete directory (check to see if we have children)
-	* list a subdirectory
-	* read files
-	* write files
-	* CoW
+	* [x] mkdir
+	* [x] create file
+	* [ ] rename file
+	* [ ] change file mode
+	* [x] delete file
+	* [x] delete directory (check to see if we have children)
+	* [x] list a subdirectory
+	* [x] read files
+	* [x] write files
+	* [ ] CoW
 * /ctl
 	* ready - gate (special logic)
 	* config
@@ -73,28 +73,4 @@ A Job will continue along the graph until it reaches the outtake or final Task.
 		* next
 	* options (list of valid keywords to write to `next` file)
 * script overlay
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

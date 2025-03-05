@@ -36,7 +36,7 @@ void resetFid(R9fid * f, C9fid fid) {
 	f->s = NULL;
 }
 
-void setupClient(R9client *c, handle h, R9srv * srv) {
+void setupClient(R9client *c, handle h, R9srv * srv, int (*closeSock)(int, int64_t)) {
 	if (NULL == c) {
 		return;
 	}
@@ -46,9 +46,11 @@ void setupClient(R9client *c, handle h, R9srv * srv) {
 
 	dill_rbtree_init(&c->fidmap);
 	dill_rbtree_init(&c->fidfree);
+
+	c->closeSock = closeSock;
 }
 
-R9client *allocClient(R9srv * srv, handle h) {
+R9client *allocClient(R9srv * srv, handle h, int (*closeSock)(int, int64_t)) {
 	R9client *c;
 
 	if (-1 == h) {
@@ -64,7 +66,7 @@ R9client *allocClient(R9srv * srv, handle h) {
 	assert((void *)c == (void *)&c->ctx);
 	assert(h > 0); // It really shouldn't be 0
 
-	setupClient(c, h, srv);
+	setupClient(c, h, srv, closeSock);
 
 	exit:
 	return c;

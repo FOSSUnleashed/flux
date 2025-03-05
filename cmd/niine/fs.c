@@ -267,7 +267,7 @@ coroutine void listen9() {
 			break;
 		}
 
-		c = allocClient(srv9, cli);
+		c = allocClient(srv9, cli, tcp_close);
 
 		if (NULL == c) {
 			break;

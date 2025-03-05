@@ -390,7 +390,11 @@ void srv_proc(C9ctx * ctx, C9t * t) {
 			C9stat **st = stbuf;
 
 			if (-1 == f->d.total) {
-				f->d.total = c->srv->list(f, st);
+				if (f->file->ev && f->file->ev->on_list) {
+					f->d.total	= f->file->ev->on_list(f, st);
+				} else {
+					f->d.total	= c->srv->list(f, st);
+				}
 			} else if (f->d.total == f->d.offset) {
 				if (0) {
 					// Originally written to make 9pfuse happy, it makes 9pfuse stupid as it reread the directory endlessly
@@ -552,8 +556,6 @@ void srv_proc(C9ctx * ctx, C9t * t) {
 
 		if (UINT32_MAX != st->mode) {
 			cnt++;
-			mode = st->mode;
-		} else {
 			mode = (f->file->st.qid.type & C9qtdir) ? st->mode | C9stdir : st->mode & ~C9stdir;
 		}
 
@@ -615,6 +617,12 @@ coroutine void run(R9client * c) {
 		}
 	}
 
+	if (c->closeSock) {
+		c->closeSock(c->h, -1);
+	} else {
+		hclose(c->h);
+	}
+
 	free(c);
 }
 
@@ -636,7 +644,7 @@ coroutine void r9tcplisten(uint16_t port, R9srv * srv9) {
 	forever {
 		cli	= tcp_accept(srv, NULL, -1);
 
-		c = allocClient(srv9, cli);
+		c = allocClient(srv9, cli, tcp_close);
 
 		if_slow (NULL == c) {
 			tcp_close(cli, now() + 400);

@@ -11,7 +11,7 @@ struct dill_anyconf {
 	char *token[DILL_CONF_MAX_TOKEN];
 	unsigned count;
 	char buffer[1024], *tp, *cp, *input, *ie;
-};
+}; // why buffer?  TODO FIXME
 
 // Check to see if `mc` matches the pattern
 bool dill_anyconf_match(const char *pat, char mc);

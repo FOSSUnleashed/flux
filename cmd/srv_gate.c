@@ -7,24 +7,11 @@
 char UN[] = "R";
 
 struct R9tag tags[128];
-struct dill_list free_tags;
-uint32_t tag_cnt = 0;
+
+R9tagAllocator all;
 
 void demo_write(R9fid *f, C9tag tag, uint64_t offset, uint32_t size, uint8_t *data) {
-	struct R9tag *cur;
-	struct dill_list *it, *head = &((R9gateFile *)f->file)->open;
-
-	r9tag_foreach(head, it, cur) {
-		// pop out of list
-		dill_list_erase(it);
-		// send
-		s9read(&cur->f->s->c->ctx, cur->tag, NULL, 0);
-		// insert into free list
-		dill_list_insert(it, &free_tags);
-
-		// `it` gets invalidated, so we need to reset `it` to a somewhat valid value
-		it = head;
-	}
+	flux_r9tagFlushAll(f->file);
 
 	// Claim we consumed everything so that clients don't think they need to resend the junk
 	s9write(&f->s->c->ctx, tag, size);
@@ -32,28 +19,15 @@ void demo_write(R9fid *f, C9tag tag, uint64_t offset, uint32_t size, uint8_t *da
 
 void demo_read(R9fid *f, C9tag tag, uint64_t offset, uint32_t size) {
 	struct R9tag *cur = NULL;
-	struct dill_list *it, *head = &((R9gateFile *)f->file)->open;
 
-	// grab a new tag structure
-	if (dill_list_empty(&free_tags)) {
-		assert(tag_cnt < 128);
-		cur = tags + tag_cnt;
-		tag_cnt++;
-	} else {
-		it = dill_list_next(&free_tags);
-		dill_list_erase(it);
+	cur = r9tagAllocate(f->file, tags);
 
-		cur = dill_cont(it, struct R9tag, list);
+	if (NULL == cur) {
+		s9error(&f->s->c->ctx, tag, "All tags used");
+		return;
 	}
 
-	// set the tag struct
-	cur->tag	= tag;
-	cur->size	= size;
-	cur->offset	= offset;
-	cur->f	= f;
-
-	// insert into file tag list
-	dill_list_insert(&cur->list, head);
+	flux_r9tagInsert(cur, f, tag, offset, size);
 }
 
 #define ST_DEFAULTS \
@@ -95,18 +69,16 @@ R9fileEv gateEv = {
 };
 
 #define FILE_STRUCT(NAME) {\
-	.f = {\
-		.st = {\
-			.qid = {.path = file_##NAME},\
-			.size	= 0,\
-			.name	= #NAME,\
-			.mode	= 0600,\
-			ST_DEFAULTS\
-		}\
-		,.ev	= &gateEv\
+	.st = {\
+		.qid = {.path = file_##NAME},\
+		.size	= 0,\
+		.name	= #NAME,\
+		.mode	= 0600,\
+		ST_DEFAULTS\
 	}\
+	,.ev	= &gateEv\
 },
-R9gateFile file_list[] = {
+R9file file_list[] = {
 	GATELIST(FILE_STRUCT)
 	{}
 };
@@ -114,7 +86,7 @@ R9gateFile file_list[] = {
 int r9list_tmp(R9fid *f, C9stat **st) {
 	if (&root == f->file) {
 		for (int i = 0; i < total_files; ++i) {
-			st[i] = &file_list[i].f.st;
+			st[i] = &file_list[i].st;
 		}
 		return total_files;
 	}
@@ -128,8 +100,8 @@ R9file *r9seek_tmp(R9file *rf, R9session *s, const char *str) {
 	}
 
 	for (int i = 0; i < total_files; ++i) {
-		if (&root == rf && 0 == strcmp(file_list[i].f.st.name, str)) {
-			return (R9file *)(file_list + i);
+		if (&root == rf && 0 == strcmp(file_list[i].st.name, str)) {
+			return file_list + i;
 		}
 	}
 
@@ -151,17 +123,17 @@ int main(void) {
 	R9client *c;
 	int i;
 
-	dill_list_init(&free_tags);
-	ipaddr_local(&addr, NULL, 5555, 0);
+	flux_r9tagAllocatorInit(&all);
+	ipaddr_local(&addr, NULL, 5553, 0);
 
 	srv	= tcp_listen(&addr, 10);
 	R9srv * srv9 = flux_r9getMainSrv();
 	flux_r9srvInit(srv9, r9seek_tmp, r9list_tmp);
 
 	for (i = 0; i < total_files; ++i) {
-		dill_list_init(&file_list[i].open);
-		file_list[i].f.st.atime	= flux_s();
-		file_list[i].f.st.mtime	= flux_s();
+		flux_r9fileInit(file_list + i, &all);
+		file_list[i].st.atime	= flux_s();
+		file_list[i].st.mtime	= flux_s();
 	}
 
 	forever {

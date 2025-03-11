@@ -13,6 +13,8 @@ typedef struct dill_list List;
 
 #define flux_list_foreach(head, M, it, cur) dill_list_T_foreach(head, typeof(*cur), M, it, cur)
 
+#define flux_list_unfree(free, it, type, member) (it = dill_list_next((free)), dill_list_erase(it), dill_cont(it, type, member))
+
 /*
 	void xPoolInit(xPool*) -- initialize a zero'd pool
 	void xPoolZero(xPool*) -- zero out a dirty pool (should not be used on a pool that has been used)

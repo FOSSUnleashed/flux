@@ -7,7 +7,9 @@ MKSHELL = rcxs
 ARFLAGS	= -rv
 AR	= ar
 
-BIN = $BUILD/o.pread $BUILD/o.fact $BUILD/o.s $BUILD/o.9dnd
+CMDS	= pread fact s 9dnd 9p
+#BIN = $BUILD/o.pread $BUILD/o.fact $BUILD/o.s $BUILD/o.9dnd $BUILD/o.9p
+BIN	= ${CMDS:%=$BUILD/o.%}
 MAN	= man/ipc_connect.3 man/yield.3
 
 # Not sure how much this is needed

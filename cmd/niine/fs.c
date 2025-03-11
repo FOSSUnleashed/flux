@@ -1,34 +1,63 @@
 #include <dill/tcp.h>
 #include <dill/msock.h>
-#include <r9.h>
 #include <sys/param.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
+#include <flux/str.h>
+#include <newniine.h>
+#include <flux/util.h>
 
-char UN[] = "R";
+ircClient *CLIENT_TEMP;
 
-extern handle h;
+R9tagAllocator all;
+R9tag tags[128];
+
+TreeRoot clientTree;
 
 #define ST_DEFAULTS \
-	,.uid = UN\
-	,.gid	= UN\
-	,.muid	= UN
+	,.uid = cli->UN\
+	,.gid	= cli->UN\
+	,.muid	= cli->UN
+
+void ready_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+	R9tag *tg;
+
+	tg = r9tagAllocate(f->file, tags);
+
+	if (NULL == tg) {
+		s9read(&f->s->c->ctx, tag, NULL, 0);
+		return;
+	}
+
+	flux_r9tagInsert(tg, f, tag, offset, size);
+}
 
 int in_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 	struct iolist iol[2];
 	int rc = 0;
+	ircClient *cli = getClientFromFile(f->file);
 
+	if (NULL == cli) {
+		*errstr = "Could not locate client";
+		return -1;
+	}
+
+	// TODO bug: 'join #fossuntest' lost a character
+
+	// Send the input as is
 	iol[0].iol_base = buf;
 	iol[0].iol_len	= size;
 	iol[0].iol_next	= iol + 1;
 	iol[0].iol_rsvd	= 0;
 
+	// Add a CR
 	iol[1].iol_base = "\r";
 	iol[1].iol_len	= 1;
 	iol[1].iol_next	= NULL;
 	iol[1].iol_rsvd	= 0;
 
-	rc = msendl(h, iol, iol + 1, -1);
+	rc = msendl(cli->h, iol, iol + 1, -1);
 
 	printf("%d %d\n", rc, errno);
 
@@ -37,31 +66,10 @@ int in_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 
 R9fileEv infev = {
 	.on_linewrite = in_write
+}, readyev = {
+	.on_read = ready_read
+	,.on_clunk = flux_r9gateClunk
 };
-
-R9file root = {
-	.st = {
-		.qid	= {.type = C9qtdir}
-		,.mode = 0500 | C9stdir
-		,.name = "."
-		,.size = 0
-		ST_DEFAULTS
-	}
-}, inf = {
-	.st = {
-		.qid = {.type = C9qtappend}
-		,.mode = 0200 | C9stappend
-		,.name = "in"
-		,.size = 0
-		ST_DEFAULTS
-	}
-	,.ev	= &infev
-};
-
-typedef struct {
-	R9file f;
-	char nick[64], _nick[64];
-} NickFile;
 
 void nick_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	NickFile *nf = dill_cont(f->file, NickFile, f);
@@ -76,6 +84,11 @@ void nick_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 void nick_write(R9fid* f, C9tag tag, uint64_t offset, uint32_t size, uint8_t *buf) {
 	char msg[64], *p;
 	uint32_t sz = size;
+	ircClient *cli = getClientFromFile(f->file);
+
+	if (NULL == cli) {
+		s9error(&f->s->c->ctx, tag, "Could not find client");
+	}
 
 	if (size >= 32) {
 		s9error(&f->s->c->ctx, tag, "Write too big");
@@ -92,7 +105,7 @@ void nick_write(R9fid* f, C9tag tag, uint64_t offset, uint32_t size, uint8_t *bu
 
 	*p++ = '\r';
 
-	msend(h, msg, p - msg, -1);
+	msend(cli->h, msg, p - msg, -1);
 
 	s9write(&f->s->c->ctx, tag, size);
 }
@@ -102,25 +115,7 @@ R9fileEv nickev = {
 	,.on_write	= nick_write
 };
 
-NickFile nick = {
-	.f = {
-		.st = {
-			.qid	= {.path = 6}
-			,.mode	= 0600
-			,.name	= "nick"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &nickev
-	}
-};
-
-typedef struct {
-	R9file f;
-	char * b;
-} BufFile;
-
-void buf_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+static void buf_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	BufFile *bf = dill_cont(f->file, BufFile, f);
 
 	if (offset >= bf->f.st.size) {
@@ -130,117 +125,95 @@ void buf_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	s9read(&f->s->c->ctx, tag, bf->b + offset, MIN(size, bf->f.st.size - offset));
 }
 
-R9fileEv bufev = {
+static R9fileEv bufev = {
 	.on_read	= buf_read
 };
 
-BufFile f001 = {
-	.f = {
-		.st = {
-			.qid = {.path = 1}
-			,.mode	= 0400
-			,.name	= "001"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &bufev
-	}
-}, f002 = {
-	.f = {
-		.st = {
-			.qid = {.path = 2}
-			,.mode	= 0400
-			,.name	= "002"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &bufev
-	}
-}, f003 = {
-	.f = {
-		.st = {
-			.qid = {.path = 3}
-			,.mode	= 0400
-			,.name	= "003"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &bufev
-	}
-}, f004 = {
-	.f = {
-		.st = {
-			.qid = {.path = 4}
-			,.mode	= 0400
-			,.name	= "004"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &bufev
-	}
-}, f005 = {
-	.f = {
-		.st = {
-			.qid = {.path = 5}
-			,.mode	= 0400
-			,.name	= "005"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &bufev
-	}
-}, fmotd = {
-	.f = {
-		.st = {
-			.qid = {}
-			,.mode	= 0400
-			,.name	= "motd"
-			,.size	= 0
-			ST_DEFAULTS
-		}
-		,.ev	= &bufev
-	}
-};
+int r9list_tmp(R9fid * f, C9stat ** _st) {
+	C9stat **st = _st;
+	List * it;
+	ircClient *cli = getClientFromFile(f->file);
+	ircBuffer *buf = ircBufferFromFile(f->file);
 
-int r9list_tmp(R9fid * f, C9stat ** st) {
-	if (&root == f->file) {
-		*st++ = &fmotd.f.st;
-		*st++ = &f001.f.st;
-		*st++ = &f002.f.st;
-		*st++ = &f003.f.st;
-		*st++ = &f004.f.st;
-		*st++ = &f005.f.st;
-		*st++ = &nick.f.st;
-		*st++ = &inf.st;
-
-		return 8;
+	if (NULL == cli) {
+		return -1;
 	}
 
-	return -1;
+	if (&cli->root == f->file) {
+		*st++ = &cli->fmotd.f.st;
+		*st++ = &cli->f001.f.st;
+		*st++ = &cli->f002.f.st;
+		*st++ = &cli->f003.f.st;
+		*st++ = &cli->f004.f.st;
+		*st++ = &cli->f005.f.st;
+		*st++ = &cli->nick.f.st;
+		*st++ = &cli->inf.st;
+		*st++ = &cli->fraw.f.st;
+		*st++ = &cli->fready.st;
+
+		// TODO: buffer listing
+		flux_list_foreach(&cli->bufActive, list, it, buf) {
+			*st++ = &buf->files[IRC_BUFFER_ROOT].st;
+		}
+	} else if (NULL != buf) {
+		if (buf->files == f->file) { // buffer root
+			*st++ = &buf->files[IRC_BUFFER_IN].st;
+			*st++ = &buf->files[IRC_BUFFER_OUT].st;
+		}
+	}
+
+	return (st == _st) ? -1 : st - _st;
 }
 
 R9file *r9seek_tmp(R9file * f, R9session * s, const char * name) {
 	if (NULL == f && NULL == name) {
-		return &root;
+		// TODO: have sub directories;
+		return &CLIENT_TEMP->root;
 	}
 
-	if (&root == f) {
-		if (0 == strcmp(fmotd.f.st.name, name)) {
-			return &fmotd.f;
-		} else if (0 == strcmp(f001.f.st.name, name)) {
-			return &f001.f;
-		} else if (0 == strcmp(f002.f.st.name, name)) {
-			return &f002.f;
-		} else if (0 == strcmp(f003.f.st.name, name)) {
-			return &f003.f;
-		} else if (0 == strcmp(f004.f.st.name, name)) {
-			return &f004.f;
-		} else if (0 == strcmp(f005.f.st.name, name)) {
-			return &f005.f;
-		} else if (0 == strcmp(nick.f.st.name, name)) {
-			return &nick.f;
-		} else if (0 == strcmp(inf.st.name, name)) {
-			return &inf;
+	ircClient *cli = getClientFromFile(f);
+	ircBuffer *buf;
+	List *it;
+
+	if (NULL == cli) {
+		return NULL;
+	}
+
+	if (&cli->root == f) {
+		if (0 == strcmp(cli->fmotd.f.st.name, name)) {
+			return &cli->fmotd.f;
+		} else if (0 == strcmp(cli->f001.f.st.name, name)) {
+			return &cli->f001.f;
+		} else if (0 == strcmp(cli->f002.f.st.name, name)) {
+			return &cli->f002.f;
+		} else if (0 == strcmp(cli->f003.f.st.name, name)) {
+			return &cli->f003.f;
+		} else if (0 == strcmp(cli->f004.f.st.name, name)) {
+			return &cli->f004.f;
+		} else if (0 == strcmp(cli->f005.f.st.name, name)) {
+			return &cli->f005.f;
+		} else if (0 == strcmp(cli->nick.f.st.name, name)) {
+			return &cli->nick.f;
+		} else if (0 == strcmp(cli->inf.st.name, name)) {
+			return &cli->inf;
+		} else if (0 == strcmp(cli->fraw.f.st.name, name)) {
+			return &cli->fraw.f;
+		} else if (0 == strcmp(cli->fready.st.name, name)) {
+			return &cli->fready;
+		}
+
+		flux_list_foreach(&cli->bufActive, list, it, buf) {
+			if (0 == strcmp(buf->files->st.name, name)) {
+				return buf->files; // root
+			}
+		}
+	} else if (buf = ircBufferFromFile(f)) {
+		if ((f == buf->files)) { // root
+			if (0 == strcmp(buf->files[IRC_BUFFER_IN].st.name, name)) {
+				return buf->files + IRC_BUFFER_IN;
+			} else if (0 == strcmp(buf->files[IRC_BUFFER_OUT].st.name, name)) {
+				return buf->files + IRC_BUFFER_OUT;
+			}
 		}
 	}
 
@@ -258,7 +231,7 @@ coroutine void listen9() {
 	ipaddr_local(&addr, "127.0.0.1", 4444, IPADDR_IPV4);
 	srv = tcp_listen(&addr, 10);
 
-	printf("SRV: %d\n", srv);
+	assert(-1 != srv);
 
 	forever {
 		cli = tcp_accept(srv, NULL, -1);
@@ -275,4 +248,129 @@ coroutine void listen9() {
 
 		go(run(c));
 	}
+}
+
+#define bufFile_setup(bf, buf) do { (bf).b = buf; (bf).be = endof(buf); } while (0)
+
+void fs_setup(ircClient *cli) {
+	treeSafeInit(&clientTree);
+
+	bufFile_setup(cli->fraw, cli->logbuffer);
+	bufFile_setup(cli->f001, cli->m1);
+	bufFile_setup(cli->f002, cli->m2);
+	bufFile_setup(cli->f003, cli->m3);
+	bufFile_setup(cli->f004, cli->m4);
+	bufFile_setup(cli->f005, cli->m5);
+
+	flux_r9tagAllocatorInit(&all);
+	flux_r9fileInit(&cli->fready, &all);
+
+	dill_rbtree_insert(&clientTree, 0, &cli->tree);
+	dill_list_init(&cli->bufActive);
+	dill_list_init(&cli->bufFree);
+	cli->bufCount = 0;
+
+	cli->root.st = (C9stat){
+		.qid	= {.type = C9qtdir}
+		,.mode = 0500 | C9stdir
+		,.name = "."
+		,.size = 0
+		ST_DEFAULTS
+	};
+	cli->fmotd.f.st	= (C9stat){
+		.qid = {}
+		,.mode	= 0400
+		,.name	= "motd"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->fmotd.f.ev	= &bufev;
+	cli->inf.st = (C9stat){
+		.qid = {.type = C9qtappend}
+		,.mode = 0200 | C9stappend
+		,.name = "in"
+		,.size = 0
+		ST_DEFAULTS
+	};
+	cli->inf.ev = &infev;
+
+	cli->f001.f.st	= (C9stat){
+		.qid = {.path = 1}
+		,.mode	= 0400
+		,.name	= "001"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->f001.f.ev	= &bufev;
+	cli->f002.f.st	= (C9stat){
+		.qid = {.path = 2}
+		,.mode	= 0400
+		,.name	= "002"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->f002.f.ev	= &bufev;
+	cli->f003.f.st	= (C9stat){
+		.qid = {.path = 3}
+		,.mode	= 0400
+		,.name	= "003"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->f003.f.ev	= &bufev;
+	cli->f004.f.st	= (C9stat){
+		.qid = {.path = 4}
+		,.mode	= 0400
+		,.name	= "004"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->f004.f.ev	= &bufev;
+	cli->f005.f.st	= (C9stat){
+		.qid = {.path = 5}
+		,.mode	= 0400
+		,.name	= "005"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->f005.f.ev	= &bufev;
+	cli->nick.f.st	= (C9stat){
+		.qid	= {.path = 6}
+		,.mode	= 0600
+		,.name	= "nick"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->nick.f.ev	= &nickev;
+	cli->fready.st = (C9stat){
+		.qid	= {.path = 7}
+		,.mode	= 0400
+		,.name	= "ready"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->fready.ev = &readyev;
+	cli->fraw.f.st = (C9stat){
+		.qid	= {.path = 8}
+		,.mode	= 0400
+		,.name	= "raw"
+		,.size	= 0
+		ST_DEFAULTS
+	};
+	cli->fraw.f.ev = &bufev;
+
+	CLIENT_TEMP = cli;
+}
+
+ircClient *getClientFromFile(R9file * rf) {
+	// TODO: calculate ID from file
+	return getClientById(0);
+}
+
+ircClient *getClientById(uint16_t id) {
+	Tree * trCli;
+
+	trCli = dill_rbtree_seek(&clientTree, id);
+
+	return containerof(trCli, ircClient, tree);
 }

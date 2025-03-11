@@ -2,177 +2,107 @@
 #include <assert.h>
 #include <dill/conf.h>
 #include <r9.h>
+#include <newniine.h>
 
 #include <stdio.h>
 
-char motd[1 << 16], m1[512], m2[512], m3[512], m4[512], m5[1 << 12], *m5p, *motdp;
-handle h;
+ircClient _cli;
 
-typedef struct {
-	R9file f;
-	char * b;
-} BufFile;
-
-extern struct {
-	R9file f;
-	char nick[64], _nick[64];
-} nick;
-
-extern BufFile fmotd, f001, f002, f003, f004, f005;
-
-enum {
-	IRC_TAGS // IRCv3 table
-	,IRC_PREFIX
-	,IRC_COMMAND
-	,IRC_ARGS
-};
-
-void irctok(char * msg, struct anyconf *cf) {
-	anyconf_readline(cf, msg);
-
-	char nx = anyconf_nextchar(cf);
-
-	if ('@' == nx) { // IRCv3 TABLE
-		anyconf_skip(cf, "@");
-		anyconf_scan(cf, "^%s");
-		anyconf_skip(cf, "%s");
-	} else {
-		anyconf_pushnull(cf);
-	}
-
-	nx = anyconf_nextchar(cf);
-
-	if (':' == nx) { // PREFIX
-		anyconf_skip(cf, ":");
-		anyconf_scan(cf, "^%s");
-		anyconf_skip(cf, "%s");
-	} else {
-		anyconf_pushnull(cf);
-	}
-
-	anyconf_scan(cf, "^%s");
-	anyconf_skip(cf, "%s");
-}
-
-void irctokargs(struct anyconf *cf) {
-	char nx;
-
-	while (!anyconf_endofline(cf)) {
-		nx = anyconf_nextchar(cf);
-
-		if (':' == nx) {
-			// Use skipone instead of skip, messages with a leading : would appear like:
-			// PRIVMSG #channel ::Hi!
-			// Message should be ":Hi!"
-			anyconf_skipone(cf, ":");
-			anyconf_scan(cf, "^\r\n"); // Message?
-		} else {
-			anyconf_scan(cf, "^%s");
-			anyconf_skip(cf, "%s");
-		}
-	}
-}
-
-void tokprint(struct anyconf *cf) {
-	for (int i = 0; i < cf->count; ++i) {
-		if (cf->token[i]) {
-			printf("%d %s\n", i, cf->token[i]);
-		} else {
-			printf("%d NULL\n", i);
-		}
-	}
-}
+extern BufFile fmotd, f001, f002, f003, f004, f005, fraw;
+extern R9file fready;
 
 coroutine void listen9();
 
-int main(int argc, char **argv) {
-	struct ipaddr addr;
-	int rc;
+void fs_setup(ircClient *cli);
 
+handle irc_connect(ircClient *cli) {
+	struct ipaddr addr;
+	handle _h;
+	
 	ipaddr_remote(&addr, "irc.slashnet.org", 6667, IPADDR_IPV4, -1);
 
-	h = tcp_connect(&addr, -1);
+	_h = tcp_connect(&addr, -1);
 
-	assert(-1 != h);
+	assert(-1 != _h);
 
-	h = suffix_attach(h, "\n", 1);
+	_h = suffix_attach(_h, "\n", 1);
 
-	assert(-1 != h);
+	assert(-1 != _h);
 
-	// NICK TESTER
-	// USER test 0 * :I am a testclient
+	// TODO: move this outside, send correct nick on connect
+	strcpy(cli->nick.nick, "TESTER");
+
+	// TODO: check if this worked
+	msend(_h, "NICK :TESTER\r", 13, -1);
+	msend(_h, "USER test 0 * :I am a test client\r", 33, -1);
+
+	bufFile_clear(&cli->fmotd);
+	bufFile_clear(&cli->f005);
+	// Maybe: bufFile_clear(&cli->fraw);
+
+	return _h;
+}
+
+int main(int argc, char **argv) {
+	int rc;
 
 	struct anyconf cf = {};
-	char buffer[1 << 14], outbuf[512], *out, *cmd, *args;
+	char buffer[1 << 14], outbuf[512], *out, *cmd;
 	size_t sz;
+	ircClient *cli = &_cli;
 
-	m5p = m5;
-	motdp = motd;
-	*motd = 0;
+	cli->h = irc_connect(cli);
 
-	strcpy(nick.nick, "TESTER");
-
-	msend(h, "NICK :TESTER\n", 13, -1);
-	msend(h, "USER test 0 * :I am a test client\n", 33, -1);
+	fs_setup(cli);
 
 	go(listen9());
 
 	forever {
-		sz = mrecv(h, buffer, 1 << 14, -1);
+		sz = mrecv(cli->h, buffer, 1 << 14, -1);
 
 		if (0 == sz) {
 			continue;
 		} else if (-1 == sz) {
+			if (EPIPE == errno) {
+				msleep(now() + 120); // TODO: exponential backoff
+
+				cli->h = irc_connect(cli);
+
+				if (-1 != cli->h) {
+					continue;
+				}
+			}
+
 			printf("ERROR %d\n", errno);
 			return 1;
 		}
 
 		if ('\r' == buffer[sz - 1]) {
-			buffer[sz - 1] = 0;
-		} else {
-			buffer[sz] = 0;
+			sz--;
 		}
+		buffer[sz] = 0;
 
+		bufFile_linewrite(&cli->fraw, buffer, buffer + sz);
 		irctok(buffer, &cf);
 
 		cmd	= cf.token[IRC_COMMAND];
-		args	= cf.input;
 
 		if ('0' == cmd[0] && '0' == cmd[1]) {
 			switch (cmd[2]) {
 			case '1':
-				args = stpcpy(m1, cf.input);
-				*args++ = '\n';
-				*args = 0;
-				f001.f.st.size = args - m1;
-				f001.b = m1;
+				bufFile_linewrite(&cli->f001, cf.input, buffer + sz);
 				continue;
 			case '2':
-				args = stpcpy(m2, cf.input);
-				*args++ = '\n';
-				*args = 0;
-				f002.f.st.size = args - m2;
-				f002.b = m2;
+				bufFile_linewrite(&cli->f002, cf.input, buffer + sz);
 				continue;
 			case '3':
-				args = stpcpy(m3, cf.input);
-				*args++ = '\n';
-				*args = 0;
-				f003.f.st.size = args - m3;
-				f003.b = m3;
+				bufFile_linewrite(&cli->f003, cf.input, buffer + sz);
 				continue;
 			case '4':
-				args = stpcpy(m4, cf.input);
-				*args++ = '\n';
-				*args = 0;
-				f004.f.st.size = args - m4;
-				f004.b = m4;
+				bufFile_linewrite(&cli->f004, cf.input, buffer + sz);
 				continue;
 			case '5':
-				m5p = stpcpy(m5p, cf.input);
-				*m5p++ = '\n';
-				f005.f.st.size = m5p - m5;
-				f005.b = m5;
+				bufFile_linewrite(&cli->f005, cf.input, buffer + sz);
 				continue;
 			}
 		} else {
@@ -186,31 +116,28 @@ int main(int argc, char **argv) {
 				out = stpcpy(out, cf.token[IRC_ARGS]);
 			}
 			*out++ = '\r';
-			msend(h, outbuf, out - outbuf, -1);
+			msend(cli->h, outbuf, out - outbuf, -1);
 		} else if (0 == strcasecmp("PRIVMSG", cmd)) {
+			flux_r9tagFlushAll(&cli->fready);
 			tokprint(&cf);
+		} else if (0 == strcasecmp("JOIN", cmd)) {
+			ircBuffer *ibuf = ircBufferAlloc(cli);
+
+			assert(NULL != ibuf);
+
+			strcpy(ibuf->name, cf.token[IRC_ARGS]);
 		} else if (0 == strcasecmp("372", cmd)) { // MOTD body
-			motdp = stpcpy(motdp, cf.token[IRC_ARGS + 1]);
-			*motdp++ = '\n';
+			bufFile_linewrite(&cli->fmotd, cf.input, buffer + sz);
+			//motdp = stpcpy(motdp, cf.token[IRC_ARGS + 1]);
 		} else if (0 == strcasecmp("376", cmd)) { // MOTD end
-			fmotd.b = motd;
-			fmotd.f.st.size = motdp - motd;
-			motdp = motd;
-
-			if (m5p != m5) {
-				m5p = m5;
-
-				printf("001: %s\n", m1);
-				printf("002: %s\n", m2);
-				printf("003: %s\n", m3);
-				printf("004: %s\n", m4);
-				printf("005: %s\n", m5);
-			}
+			;
 		} else {
 			tokprint(&cf);
 		}
 	}
 
+	// BEGIN ????
+	if (0) {
 	FILE * fp;
 
 	fp = fopen("tmptmp", "r");
@@ -221,6 +148,10 @@ int main(int argc, char **argv) {
 
 	anyconf_readline(&cf, buffer);
 
+	fclose(fp);
+	}
+	// END ????
+
 	// @table :prefix command args :final_arg (channel/user)
 
 	// PRIVMSG #channel :This a message that contains spaces
@@ -230,8 +161,6 @@ int main(int argc, char **argv) {
 
 	// peek for @, push null or until space
 	// peek for : push null or until space
-
-	fclose(fp);
 
 	return 0;
 }

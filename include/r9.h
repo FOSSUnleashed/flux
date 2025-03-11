@@ -3,10 +3,11 @@
 #include <new.h>
 
 #include <c9_protoR.h>
-#include <dill/util_list.h>
 #include <dill/util_rbtree.h>
+#include <dill/util.h>
 #include <stdbool.h>
-// Following niine/spec
+#include <flux/list.h>
+#include <flux/util.h>
 
 typedef struct R9file R9file;
 typedef struct R9fid R9fid;
@@ -114,6 +115,9 @@ struct R9fileEv {
 	r9listEv on_list;
 };
 
+// TODO: switch pending to a List
+// TODO: file initialization helper for pending and other stuff
+
 struct R9file {
 	C9stat st;
 
@@ -125,6 +129,9 @@ struct R9file {
 	R9fileEv * ev;
 
 	R9file * parent;
+
+	List open;
+	struct R9tagAllocator *all;
 };
 
 struct R9fid {
@@ -220,19 +227,32 @@ R9session *flux_r9sessionNew(R9client * cli, C9fid fid, const char * uname, cons
 // </R9srv>
 
 struct R9tag {
-	struct dill_list list;
+	List list;
 	C9tag tag;
 	uint64_t offset;
 	uint32_t size;
 	R9fid *f;
 };
 
-struct R9gateFile {
-	R9file f;
-	struct dill_list open;
+struct R9tagAllocator {
+	List free;
+	uint16_t count;
 };
 
-typedef struct R9gateFile R9gateFile;
+typedef R9file R9gateFile;
 typedef struct R9tag R9tag;
+typedef struct R9tagAllocator R9tagAllocator;
+
+#define r9tagAllocate(file, taglist) (flux_r9tagAllocate((file)->all, taglist, flux_endof(taglist)))
+
+R9tag *flux_r9tagAllocate(R9tagAllocator *, R9tag *start, R9tag *end);
+void flux_r9fileInit(R9file *rf, R9tagAllocator *all);
+void flux_r9tagAllocatorInit(R9tagAllocator *alloc);
+void flux_r9tagInsert(R9tag *cur, R9fid *fid, C9tag tag, uint64_t offset, uint32_t size);
+List *flux_r9tagFlush(R9tagAllocator *all, R9tag *cur);
+void flux_r9tagFlushAll(R9file *rf);
+void flux_r9tagFlushClient(R9file *, R9client *c);
+void flux_r9gateClunk(R9fid *f);
+void flux_r9tagFree(R9tagAllocator *, List *);
 
 #define r9tag_foreach(head, it, cur) dill_list_T_foreach(head, R9tag, list, it, cur)

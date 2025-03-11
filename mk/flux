@@ -4,6 +4,7 @@ FLUX_	= \
 	dns\
 	r9fid\
 	r9srv\
+	r9gate\
 	c9\
 	time\
 	json\

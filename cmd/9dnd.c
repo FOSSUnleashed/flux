@@ -34,13 +34,9 @@ coroutine void setup(T9client *c) {
 	C9fid fidroot = 0, fidlog = 1;
 	uint8_t *walkPath[] = {"log", NULL};
 
-	yield();
-
 	c9version(&c->ctx, &tag, 1 << 13);
-	yield();
 
 	c9attach(&c->ctx, &tag, fidroot, C9nofid, "R", "");
-	yield();
 
 	c9walk(&c->ctx, &tag, fidroot, fidlog, walkPath);
 	msleep(now() + 500);

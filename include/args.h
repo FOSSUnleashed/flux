@@ -1,3 +1,7 @@
+#pragma once
+
+#include <string.h>
+
 #define ARGBEGIN \
 		int _argtmp=0, _inargv=0; char *_argv=NULL; \
 		if(!argv0) {argv0=*argv; argv++, argc--;} \
@@ -15,6 +19,8 @@
 				(--argc, ++argv, _used(argc), *(argv-1)) \
 				: ((f), (char*)0)))
 #define ARGF() EARGF(_used(0))
+
+#define ARG(x) ARGBEGIN x ARGEND
 
 #ifndef KENC
 static inline void _used(long a, ...) { if(a){} }

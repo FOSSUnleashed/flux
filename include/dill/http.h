@@ -87,6 +87,10 @@ DILL_EXPORT int dill_http_recvfield(
     size_t valuelen,
     int64_t deadline);
 
+int dill_http_send(int s, const char *msg, size_t sz, int64_t deadline);
+int dill_http_recv(int s, const char *msg, size_t sz, int64_t deadline);
+
+
 #if !defined DILL_DISABLE_RAW_NAMES
 #define http_storage dill_http_storage
 #define http_attach dill_http_attach
@@ -99,6 +103,9 @@ DILL_EXPORT int dill_http_recvfield(
 #define http_recvstatus dill_http_recvstatus
 #define http_sendfield dill_http_sendfield
 #define http_recvfield dill_http_recvfield
+
+#define http_send dill_http_send
+#define http_recv dill_http_recv
 #endif
 
 #endif
@@ -108,4 +115,3 @@ DILL_EXPORT int dill_http_recvfield(
 #endif
 
 #endif
-

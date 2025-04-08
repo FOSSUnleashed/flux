@@ -2,8 +2,11 @@
 #include <time.h>
 #include <dill/all.h>
 #include <flux/time.h>
+#include <flux/ulid.h>
 
-char UN[] = "R", buf[1 << 14];
+flux_isaac32_ctx rng;
+
+uint8_t UN[] = "R", buf[1 << 14];
 
 #define ST_DEFAULTS \
 	.uid	= UN, \
@@ -45,10 +48,20 @@ void rf_beat_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	s9read(&f->s->c->ctx, tag, buf, 5);
 }
 
+void rf_ulid_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+	uint8_t *p = flux_ulid32(buf, buf + 32, &rng);
+
+	*p++ = '\n';
+
+	s9read(&f->s->c->ctx, tag, buf, p - buf);
+}
+
 R9fileEv beatEv = {
 	.on_shortread = rf_beat_read
 }, beatxEv = {
 	.on_shortread = rf_beat_readx
+}, ulidEv = {
+	.on_shortread = rf_ulid_read
 };
 
 R9file root = {
@@ -77,13 +90,23 @@ R9file root = {
 		ST_DEFAULTS
 	}
 	,.ev	= &beatxEv
+}, rf_ulid = {
+	.st = {
+		.qid	= {.path = 2},
+		.size	= 27,
+		.name	= "ulid",
+		.mode	= 0400,
+		ST_DEFAULTS
+	}
+	,.ev	= &ulidEv
 };
 
 int r9list_tmp(R9fid *f, C9stat **st) {
 	if (&root == f->file) {
 		st[0] = &rf_beat.st;
 		st[1] = &rf_beatx.st;
-		return 2;
+		st[2]	= &rf_ulid.st;
+		return 3;
 	}
 
 	return -1;
@@ -99,10 +122,32 @@ R9file *r9seek_tmp(R9file *rf, R9session *s, const char *str) {
 			return &rf_beatx;
 		} else if (0 == strncmp("beat", str, 4)) {
 			return &rf_beat;
+		} else if (0 == strncmp("ulid", str, 4)) {
+			return &rf_ulid;
 		}
 	}
 
 	return NULL;
+}
+
+static uint32_t gen() {
+	uint32_t r = 0, bits = 0, tmp;
+
+	while (bits < 32) {
+		tmp = (flux_us() == flux_us()) | ((flux_us() == flux_us()) << 1);
+
+		switch (tmp) {
+			case 0:
+			case 3:
+				break;
+			case 1:
+			case 2:
+				r = (r << 1) | (tmp & 1);
+				bits++;
+		}
+	}
+
+	return r;
 }
 
 int main(void) {
@@ -113,7 +158,15 @@ int main(void) {
 	R9srv * srv9 = flux_r9getMainSrv();
 	flux_r9srvInit(srv9, r9seek_tmp, r9list_tmp);
 
-	ipaddr_local(&addr, NULL, 5555, 0);
+	// RNG SEED
+
+	for (i = 0; i < FLUX_ISAAC_RANDSIZ; i++) {
+		rng.randrsl[i] = gen();
+	}
+
+	isaac32_init(&rng, 1);
+
+	ipaddr_local(&addr, NULL, 1312, 0);
 
 	srv	= tcp_listen(&addr, 10);
 
@@ -134,7 +187,6 @@ int main(void) {
 		}
 	}
 
-	exit:
 	tcp_close(srv, now() + 400);
 
 	return 0;

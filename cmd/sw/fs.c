@@ -93,7 +93,7 @@ sw_workspace *sw_wsFromSession(R9session * s) {
 }
 
 void initWorkspace(sw_workspace *ws) {
-	flux_bufzero(ws, ws + 1);
+	flux_bufzeromem(ws, ws + 1);
 
 	R9file *rf;
 

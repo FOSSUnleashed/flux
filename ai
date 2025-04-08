@@ -11,8 +11,7 @@ team	= <={%first $4 0}
 
 forever {
 	if {!999 stat $char >/dev/null >[2]/dev/null} {
-		# TODO: fix team
-		echo <={%flatten ' ' spawn $char $team^0 $type} | tee /dev/stderr | 999 write ctl >[2]/dev/null || sleep 4
+		echo <={%flatten ' ' spawn $char $team $type} | tee /dev/stderr | 999 write ctl >[2]/dev/null || sleep 4
 	}
 
 	while {999 read /^$char^/ready >[2]/dev/null} {

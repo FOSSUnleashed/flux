@@ -2,13 +2,13 @@
 #include <newniine.h>
 
 uint8_t *bufFile_write(BufFile * file, uint8_t *buf, uint8_t *be) {
-	uint8_t *b;
+	Buffer a = {.start = bufFile_getpos(file), .end = file->be}, b = {.start = buf, .end = be}, p;
 
-	b = flux_bufcpy(bufFile_getpos(file), file->be, buf, be);
+	p = flux_bufcpy(a, b);
 
-	file->f.st.size = b - file->b;
+	file->f.st.size = p.end - file->b;
 
-	return b;
+	return p.end;
 }
 
 uint8_t *bufFile_linewrite(BufFile * file, uint8_t *buf, uint8_t *be) {

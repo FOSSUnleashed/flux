@@ -1,6 +1,8 @@
-CPPFLAGS	= $CPPFLAGS -Iinclude -Ibuild/any/include
-CFLAGS	= $CFLAGS $CPPFLAGS -g3 -Wall -Wno-format -Wno-pointer-sign -Wno-unused-function
-LDLIBS	= $LDLIBS -L$FLUX_LIB -ldill -lflux -lssl -lcrypto
+CPPFLAGS	= $CPPFLAGS -Iinclude -Ibuild/any/include -DWOLFSSL_USER_SETTINGS
+CFLAGS	= $CFLAGS $CPPFLAGS -g3 -Wall -Wno-format -Wno-pointer-sign -Wno-unused-function -fstack-protector-all -mshstk
+LDLIBS	= $LDLIBS -L$FLUX_LIB -lflux -ldill -lssl -lcrypto
+#LDLIBS	= $LDLIBS -L$FLUX_LIB -lflux -ldill -lwolfssl
+LDLIBS	= $LDLIBS -lX11 -lxcb -lXau
 LDFLAGS	= $LDFLAGS -static
 
 CXXFLAGS	= $CXXFLAGS $CPPFLAGS

@@ -59,6 +59,8 @@ int main(int argc, char **argv) {
 
 	cli	= tcp_connect(&addr, -1);
 
+	assert(-1 != cli);
+
 	c = t9openClient(cli);
 
 	assert(c);

@@ -93,7 +93,7 @@ coroutine void process(handle cli) {
 
 		if (-1 == rc) {
 			if (EPIPE == errno) {
-				return;
+				break;
 			}
 			printf("%d\n", errno);
 			break;
@@ -178,7 +178,11 @@ coroutine void process(handle cli) {
 		}
 	}
 	cli = prefix_detach(cli);
-	tcp_close(cli, -1);
+	if (-1 == cli) {
+		hclose(cli);
+	} else {
+		tcp_close(cli, -1);
+	}
 }
 
 int main(int argc, char **argv) {

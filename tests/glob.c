@@ -121,5 +121,3 @@ describe(glob) {
 		glob_free(&g);
 	}
 }
-
-snow_main();

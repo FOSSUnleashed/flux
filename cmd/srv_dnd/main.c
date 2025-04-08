@@ -25,8 +25,6 @@ bool Victory = false;
 
 #define RAND() rand32(&rng)
 
-size_t logbuffmt(const char * fmt, ...);
-
 struct Creature *activeTurn();
 
 const uint8_t *bufstrlen(const uint8_t *buf) {
@@ -72,14 +70,19 @@ const uint8_t *bufstrlen(const uint8_t *buf) {
 
 // N___ ____ __II IISS
 
-Creature *getCreatureByName(const uint8_t * str, const uint8_t * strend) {
+Creature *getCreatureByName(const uint8_t * _str, const uint8_t * strend) {
 	List *it;
 	struct Creature *cur;
-	uint8_t *p;
+	Buffer str = {(uint8_t *)_str, (uint8_t *)strend}, name;
+
 
 	flux_list_foreach(&turn, turn, it, cur) {
 		// TODO: use proper list of all creatures
-		if (0 == flux_bufeq(str, strend, cur->files[CREATURE_ROOT].file.st.name, &p) && strend == p) {
+		name.start = cur->files[CREATURE_ROOT].file.st.name;
+		name.end	= name.start + 512;
+		name.end	= bufend(name);
+
+		if (0 == flux_bufcmp(str, name, NULL)) {
 			return cur;
 		}
 	}
@@ -250,7 +253,7 @@ void rollInitiative() {
 
 	if (NULL != high) {
 		T = &high->turn;
-		logbuffmt("First turn: %s\n", high->CRFNAME);
+		logbuffmt("New game started!\n\tFirst turn: %s\n", high->CRFNAME);
 	}
 
 	flushReady(activeTurn());
@@ -303,14 +306,22 @@ struct Creature *activeTurn() {
 	return dill_cont(T, struct Creature, turn);
 }
 
-#define match(a, sz, b, p) (0 == flux_bufeq(a, a + sz, b, &p))
+#define match(a, sz, b, p) (0 == flux_bufeq(a, BUFLIT(b), &p))
 
-int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
+Weapon nulloWeapon = {
+	.dice_size	= 4
+	,.dice_count	= 1
+	,.crit_mult	= 2
+	,.crit_range	= 20
+};
+
+int act_write(R9fid* f, uint32_t size, uint8_t *data, char ** errstr) {
 	struct Creature *cr, *tg = NULL;
 	struct CreatureFile *cf = dill_cont(f->file, struct CreatureFile, file);
 	cr = cf->cr;
 	uint16_t rolls[2];
-	uint8_t crit = 0, *p, *be = buf + size;
+	uint8_t crit = 0, *p, *be = data + size;
+	Buffer buf = {data, data + size};
 
 	if (activeTurn() != cr) {
 		*errstr = "Not your turn";
@@ -352,8 +363,12 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 
 		takeDamage(tg, 0, rolls[0]);
 	} else if (match(buf, size, "attack", p)) {
-		// TODO: BAB
 		rolls[0] = die(20);
+		Weapon *wp = &nulloWeapon;
+
+		if (cr->weapon < MAX_WEAPONS && cr->weapons[cr->weapon].dice_count) {
+			wp = cr->weapons + cr->weapon;
+		}
 
 		if (p != be) {
 			for (++p; p <= be && ' ' == *p; ++p);
@@ -365,19 +380,25 @@ int act_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 			goto no_target;
 		}
 
-		if (20 == rolls[0]) {
+		if (wp->crit_range <= rolls[0]) {
 			crit = 1;
 			rolls[0] = die(20);
 		}
 
-		if (rolls[0] + cr->ab_str.mod > 10 + tg->ab_dex.mod + tg->ac) {
+		// TODO: size mod
+		// size mod | bab | focus | str/dex
+		rolls[0] += wp->focus + (wp->finesse ? cr->ab_dex.mod : cr->ab_str.mod) + cr->bab;
+
+		if (rolls[0] > 10 + tg->ab_dex.mod + tg->ac) {
 			// Hit
 			crit++;
 		}
 
 		if (0 != crit) {
-			rolls[1] = die(8) + cr->ab_str.mod;
-			rolls[1] *= crit;
+			rolls[1] = die(8) + (wp->primary ? cr->ab_str.mod * 3 / 2 : cr->ab_str.mod) + wp->specialization * 2;
+			if (crit > 1) {
+				rolls[1] *= (wp->crit_mult > 1 && wp->crit_mult < 5) ? wp->crit_mult : 2;
+			}
 		}
 
 		switch (crit) {
@@ -508,16 +529,49 @@ void abScore_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
 	s9read(&f->s->c->ctx, tag, buf, 1 + (b - buf));
 }
 
+// Char Creation:
+// Select race
+// Ability points assignment
+// Alignment
+
+// General
+// Select weapon
+// Select spell
+// Use item?
+
+// Level up:
+// Select feat
+// Select ability level up choice
+// Select skill points
+// Select class to level up
+// Class ability selection
+// Select spells to learn
+
+static int crctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
+	
+
+	return 0;
+}
+
+static void crctl_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+	// What choices need to be made for the character
+
+	s9read(&f->s->c->ctx, tag, NULL, 0);
+}
+
 R9fileEv abilityEv = {
 }, abScoreEv = {
 	.on_shortread	= abScore_read
+}, crctlEv = {
+	.on_shortread	= crctl_read
+	,.on_linewrite	= crctl_write
 };
 
 void setScore(struct AbScore *sc, uint16_t val);
 void setupCreatures(List * turn);
 
 void initCreature(struct Creature *cr, uint16_t id) {
-	bufzero(cr, cr + 1);
+	bufzeromem(cr, cr + 1);
 	int i;
 	R9file *f;
 	struct CreatureFile *cf;
@@ -695,7 +749,6 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	f->st.qid.type	= C9qtdir;
 //	f->ev	= &friendsEv; // R9fileEv
 
-
 	cf++;
 	f	= &cf->file;
 
@@ -703,6 +756,13 @@ void initCreature(struct Creature *cr, uint16_t id) {
 	f->st.mode	= C9stdir | 0500;
 	f->st.qid.type	= C9qtdir;
 //	f->ev	= &enemiesEv;
+
+	cf++;
+	f	= &cf->file;
+
+	f->st.name	= "ctl";
+	f->st.mode	= 0600;
+	f->ev	= &crctlEv;
 }
 
 void ctl_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
@@ -742,10 +802,11 @@ int16_t flux_bufreadint16(uint8_t *buf, uint8_t *be, uint8_t **p) {
 	return 0;
 }
 
-int ctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
-	uint8_t *p, *be = buf + size;
+int ctl_write(R9fid* f, uint32_t size, uint8_t *data, char ** errstr) {
+	uint8_t *p, *be = data + size;
 	List *it;
 	Creature *cr;
+	Buffer buf = {data, data + size};
 
 	if (match(buf, size, "start", p)) {
 		rollInitiative();
@@ -758,6 +819,8 @@ int ctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 		rollInitiative();
 	} else if (match(buf, size, "spawn", p)) { // spawn <name> <team> <type>
 		if (p == be) goto bad_spawn;
+
+		logbuffmt("Attempt Spawn\n");
 
 		uint8_t *name, *nameEnd, *team, *teamEnd;
 		++p;
@@ -780,11 +843,12 @@ int ctl_write(R9fid* f, uint32_t size, uint8_t *buf, char ** errstr) {
 		flux_bufadvance(p, be, (' ' != *p));
 		if (p == be) goto bad_spawn;
 
-		teamEnd = p - 1;
+		teamEnd = p;
 
 		flux_bufadvance(p, be, (' ' == *p)); // skip space
 		if (p == be) goto bad_spawn;
 
+		logbuffmt("spawn test\n");
 		creatureSpawn(name, nameEnd, flux_bufreadint16(team, teamEnd, NULL), p, be);
 
 		return 0;

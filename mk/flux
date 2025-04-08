@@ -5,6 +5,9 @@ FLUX_	= \
 	r9fid\
 	r9srv\
 	r9gate\
+	rpc\
+	plumb\
+	dial\
 	c9\
 	time\
 	json\
@@ -26,6 +29,7 @@ FLUX_	= \
 	fmt\
 	adopt\
 	spawn\
+	env\
 	WjCryptLib_Aes\
 	WjCryptLib_AesCbc\
 	WjCryptLib_AesCtr\
@@ -39,7 +43,9 @@ FLUX_O	= ${FLUX_:%=$BUILD/_libflux/%.o}
 
 $BUILD/_libflux/%.o: libflux/%.c
 	access -d $BUILD/_libflux || mkdir $BUILD/_libflux
-	$CC $CFLAGS $CPPFLAGS $TARGET_ARCH -c -o $target $prereq
+	$CC $CFLAGS $TARGET_ARCH -c -o $target $prereq
 
 $BUILD/lib/libflux.a: $FLUX_O
 	$AR $ARFLAGS $target $prereq
+
+libflux:V: $BUILD/lib/libflux.a

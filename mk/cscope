@@ -2,6 +2,6 @@
 
 cscope.files:V:
 	{ echo $CPPFLAGS; find -xdev -type f -name '*.[chly]' -o -name '*.[ch].inc'; }  > $target
-	cscope -l <<<'' >/dev/null 2>/dev/null
+	cscope -bcq
 
 all:V: cscope.files

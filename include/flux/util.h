@@ -9,6 +9,10 @@
 #define flux_containerof(ptr, type, member) (ptr ? ((type*) (((char*) ptr) - offsetof(type, member))) : NULL)
 #define flux_endof(arr) ((arr) + (sizeof(arr)/sizeof(*(arr))))
 
+#define flux_unstruct(Type) typedef struct Type Type
+
+#define flux_cat(a, b) a ## b
+
 #if !defined FLUX_DISABLE_RAW_NAMES
 #define min flux_min
 #define max flux_max

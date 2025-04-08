@@ -14,13 +14,3 @@ describe(time) {
 		asserteq(flux_parsetime(NULL), -1, "NULL");
 	}
 }
-
-snow_main();
-
-/*
-int main(void) {
-	struct timeval tv;
-
-	printf("%d %d\n", sizeof(tv.tv_sec), sizeof(tv.tv_usec));
-}
-// */

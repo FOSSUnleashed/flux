@@ -3,10 +3,15 @@
 srv_set = <={~~ cmd/srv_*.c cmd/srv_*.c}
 dir_set = <={~~ cmd/*/ cmd/*/}
 
+fn %filter {|fn-f A|map {|a|if {f $a} {result $a} else {result}} $A}
+
+srv_set = <={%filter {|x| !~ $x srv_ssh} $srv_set}
+dir_set = <={%filter {|x| !~ $x srv_ssh} $dir_set}
+
 echo 'MKSHELL = rcxs' \n
 
 if {!~ $BUILD} {
-	echo 'CFLAGS = $CFLAGS -DBUILD_TS='^`{$BUILD^/o.s}
+	echo 'CFLAGS = $CFLAGS -DBUILD_TS='^`{$BUILD^/o.s | head -1}
 }
 
 for t $srv_set {

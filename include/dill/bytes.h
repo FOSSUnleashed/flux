@@ -64,7 +64,7 @@ static inline uint16_t dill_ws(unsigned char * buf, const char * str, uint16_t l
 	dill_wu16(buf, len);
 	buf += 2;
 	for (; len; --len) {
-		*buf = *str;
+		*buf++ = *str++;
 	}
 	return cnt;
 }
@@ -77,7 +77,7 @@ static inline uint16_t dill_rs(unsigned char * buf, unsigned char * out) {
 	buf	+= 2;
 
 	for (; sz; --sz) {
-		*out = *buf;
+		*out++ = *buf++;
 	}
 
 	return res;

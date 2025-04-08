@@ -70,5 +70,3 @@ describe(mq) {
 		read_cmp(rC, "twitch", "Last message");
 	}
 }
-
-snow_main();

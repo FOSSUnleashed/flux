@@ -16,5 +16,3 @@ describe(json) {
 		c3(out, "\\n", "\n");
 	}
 }
-
-snow_main();

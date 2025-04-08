@@ -5,6 +5,7 @@
 #include <stdlib.h> // system()
 #include <sys/stat.h>
 #include <args.h>
+#include <flux/dial.h>
 
 // stat() poll version
 // read event file, update on event item (pubsub)
@@ -61,6 +62,8 @@ int main(int argc, char **argv) {
 	load(fn);
 	render();
 
+	printf("NAMESPACE: %s\n", flux_getns());
+
 	for (;;) {
 		stat(fn, &st);
 
@@ -75,3 +78,20 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
+
+#if 0
+
+// do handshake (no auth)
+c = setup(addr, eaddr, uname, euname, aname, eaname, deadline)
+
+h == tcp_handle | ipc_handle
+c == rpc_handle
+
+error checking
+
+fid = t9open(c, "pane", 0);
+
+t9read(fid, offset, buffer, buffer_end);
+plumb_parse(pmp, buffer, buffer_end);
+
+#endif

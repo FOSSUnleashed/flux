@@ -3,6 +3,33 @@
 #include <dill/bsock.h>
 #include <stdlib.h>
 
+//
+// New flux_rpc code
+//
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//
+// Old c9 client code
+//
+
+
+
 // actual read
 uint8_t *dill_t9read(C9ctx *ctx, uint32_t size, int *err) {
 	T9client * c = dill_cont(ctx, T9client, ctx);

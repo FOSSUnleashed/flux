@@ -13,110 +13,130 @@
 	* [X] error() (use strerror_r()) (three error functions, two sig functions)
 */
 
+#define NOTEND(b) (b.start < b.end)
 
-uint8_t * flux_bufindexnull(const uint8_t * in, const uint8_t * end, uint8_t ch) {
-	if (end < in || NULL == in || NULL == end) {
+const Buffer badbuffer = {NULL, NULL};
+
+// trim() move end pointer -- trim to space or trim to NUL
+// seek() move start pointer -- advance
+
+// return NULL on:
+// * in is NULL
+// * end is NULL
+// * end is not after in
+uint8_t * flux_bufindexnull(Buffer data, uint8_t ch) {
+	if (isbadbuffer(data)) {
 		return NULL;
 	}
 
-	for (; in < end; ++in) {
-		if (ch == *in) {
-			return (uint8_t *)in;
+	for (; NOTEND(data); ++data.start) {
+		if (ch == *data.start) {
+			return data.start;
 		}
 	}
 
-	return (uint8_t *)end;
+	return data.end;
 }
 
-uint8_t * flux_bufindex(const uint8_t * in, const uint8_t * end, uint8_t ch) {
-	const uint8_t *p = flux_bufindexnull(in, end, ch);
+// Return NULL if we fail to find `ch`
+uint8_t * flux_bufindex(Buffer data, uint8_t ch) {
+	uint8_t *p = flux_bufindexnull(data, ch);
 
-	return NULL != p && *p == ch ? (uint8_t *)p : NULL;
+	return NULL != p && data.end != p && *p == ch ? p : NULL;
 }
 
-int flux_bufcmp(const uint8_t * a, const uint8_t * aend, const uint8_t * b, const uint8_t * bend) {
+// Fails if buffers are different sizes
+int flux_bufcmp(Buffer a, Buffer b, uint8_t ** out) {
 	int res = 0;
 
-	if (aend < a || bend < b || NULL == a || NULL == b || NULL == aend || NULL == bend) {
+	if (isbadbuffer(a) || isbadbuffer(b)) {
 		errno = EINVAL;
 		return -257;
 	}
 
-	if ((aend - a) != (bend - b)) {
+	if ((a.end - a.start) != (b.end - b.start)) {
 		return -257;
 	}
 
 	// b size check infered
-	for (; a < aend && 0 == res; ++a, ++b) {
-		res = *a - *b;
+	for (; a.start < a.end && 0 == res; ++a.start, ++b.start) {
+		res = *a.start - *b.start;
+	}
+
+	if (NULL != out) {
+		*out = a.start;
 	}
 
 	return res;
 }
 
-int flux_bufeq(const uint8_t * a, const uint8_t * aend, const uint8_t * str, uint8_t ** out) {
+// *out returns the last character matched successfully
+int flux_bufeq(Buffer a, Buffer b, uint8_t ** out) {
 	int res = 0;
 
-	if (aend < a || NULL == a || NULL == aend || NULL == str) {
+	// Fail if either buffer is bad
+	// Fail if b is not NUL-terminated
+	if (isbadbuffer(a) || isbadbuffer(b) || *(b.end)) {
 		errno = EINVAL;
 		return -257;
 	}
 
-	for (; a <= aend && 0 == res && *str; ++a, ++str) {
-		res = *a - *str;
+	// Fail if b is bigger than a
+	if ((a.end - a.start) < (b.end - b.start)) {
+		errno = ERANGE;
+		return -257;
+	}
+
+	for (; NOTEND(a) && NOTEND(b) && 0 == res && *b.start; ++a.start, ++b.start) {
+		res = *a.start - *b.start;
 	}
 
 	if (NULL != out) {
-		*out = (uint8_t *)a - 1;
+		*out = (uint8_t *)a.start - 1;
 	}
 
 	return res;
 }
 
-uint8_t * flux_bufcpy(uint8_t * dst, const uint8_t * dstend, const uint8_t * src, const uint8_t * srcend) {
-	if (NULL == dst || NULL == dstend || NULL == src || NULL == srcend) {
+Buffer flux_bufcpy(Buffer dst, Buffer src) {
+	if (isbadbuffer(dst) || isbadbuffer(src)) {
 		errno = EINVAL;
-		return NULL;
+		return badbuffer;
 	}
 
-	if ((srcend - src) > (dstend - dst)) {
+	if ((src.end - src.start) > (dst.end - dst.start)) {
 		errno = ERANGE;
-		return NULL;
+		return badbuffer;
 	}
+
+	uint8_t *p = dst.start;
 
 	// infer that dst will be valid from above check
-	for (; src < srcend; ++src, ++dst) {
-		*dst = *src;
+	for (; NOTEND(src); ++src.start, ++p) {
+		*p = *src.start;
 	}
+
+	dst.end = p;
 
 	return dst;
 }
 
-uint8_t * flux_buflcpy(uint8_t * dst, const uint8_t * dstend, const uint8_t * src, const uint8_t * srcend) {
-	uint8_t * p = flux_bufcpy(dst, dstend, src, srcend);
+// dst start end
+// out start eod
+Buffer flux_buflcpy(Buffer dst, Buffer src) {
+	Buffer out = flux_bufcpy(dst, src);
 
-	if (p) {
-		*p = 0;
+	if (!isbadbuffer(out) && *out.start) {
+		*out.start = 0;
 	}
 
-	return p;
+	return out;
 }
 
-uint8_t * flux_bufwrite(uint8_t * dst, const uint8_t * dstend, const uint8_t * src, size_t sz) {
-	uint8_t * end = flux_bufend(src, src + sz);
-
-	return flux_bufcpy(dst, dstend, src, end);
-}
-
-uint8_t * flux_buflwrite(uint8_t * dst, const uint8_t * dstend, const uint8_t * src, size_t sz) {
-	uint8_t * end = flux_bufend(src, src + sz);
-
-	return flux_buflcpy(dst, dstend, src, end);
-}
-
-void flux_bufset(uint8_t * dst, const uint8_t * dstend, uint8_t val) {
-	while (dst < dstend) {
-		*dst++ = val;
+// Sets a buffer to be all of one value
+void flux_bufset(Buffer dst, uint8_t val) {
+	while (NOTEND(dst)) {
+		*dst.start++ = val;
 	}
 }
 
@@ -133,6 +153,70 @@ void flux_bufset(uint8_t * dst, const uint8_t * dstend, uint8_t val) {
 // flux_buf_w64
 
 
+uint8_t *flux_bufdump(uint8_t *out, uint8_t *eout, const uint8_t *in, const uint8_t *ein) {
+	uint8_t *b = out, *c = (uint8_t *)in, *p, chars[] = "0123456789ABCDEF";
+	uintptr_t offset;
+
+	if (eout <= out || ein <= in) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	// 67 characters per line of output
+	while (c < ein && b + 68 < eout) {
+		offset = c - in;
+
+		// offset (9 characters)
+		p = b + 8;
+
+		*p-- = ':';
+
+		while (p >= b) {
+			*p-- = chars[offset & 0x0F];
+			offset >>= 4;
+		}
+
+		b += 9;
+
+		// hex columns (41 characters)
+
+		*b++ = ' ';
+		p = c;
+
+		while (p - c < 16) {
+			if (p < ein) {
+				*b++ = chars[(*p & 0xF0) >> 4];
+				*b++ = chars[ *p & 0x0F];
+			} else {
+				*b++ = ' ';
+				*b++ = ' ';
+			}
+			if ((p - c) & 1) {
+				*b++ = ' ';
+			}
+			++p;
+		}
+
+		// ascii colums (17 characters)
+
+		*b++ = ' ';
+		p = c;
+
+		while (p - c < 16) {
+			if (p < ein) {
+				*b++ = (0x20 > *p || *p > 0x7F) ? '.' : *p;
+			} else {
+				*b++ = ' ';
+			}
+			++p;
+		}
+
+		c += 16;
+		*b++ = '\n';
+	}
+
+	return b;
+}
 
 
 

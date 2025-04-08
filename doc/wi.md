@@ -137,10 +137,10 @@
 			* IRC DCC
 			* IRC CTCP
 			* APC
-			* ---
-			* ULID
-			* UUID
-			* ndb
+			- ---
+			- [x] ULID
+			- [ ]  UUID
+			- [ ]  ndb
 			* tdb
 			* ldb
 			* irc log db
@@ -148,7 +148,7 @@
 			* terminal (pty curses?)??????
 			* glob
 			* time delta
-			* blox
+			* blox (dream)
 			* RPG Maker files are they game maker instead?
 			* Wake-on-LAN
 			* IPMI
@@ -161,8 +161,8 @@
 			* Fake libuv (emulate libuv)
 			* Namespaces???? (Like Linux ones?)
 			* XDG
-			* dial/listen
-			* xxd function (Function to do a hexdump)
+			- [x]  dial/listen
+			- [x]  xxd function (Function to do a hexdump)
 			* libdill fd pair (from pipe())
 			* cscope file parsing (GNU globals)
 			* str2num/num2str
@@ -227,6 +227,7 @@
 	* Boot from Moose
 	* Wake on LAN
 	* IPMI
+	* Redfish? https://en.wikipedia.org/wiki/Redfish_(specification)
 	* CLI utils -- file-time-delta
 	* vim remote control
 		* Get the line at the cursor
@@ -236,7 +237,7 @@
 	* Mail events --> feeds into factotum
 * Stuff to look into
 	* Ori
-	* Tra
+	- [x]  Tra
 	* W.A.S.T.E.
 	* KWEST
 	* gnutella

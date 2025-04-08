@@ -1,0 +1,32 @@
+- [ ] groceryfs
+	- [ ] Purchace date
+	- [ ] increase stock
+	- [ ] decrease stock
+	- [ ] expiration
+	- [ ] Handle 2+ sets of stock with different expirations/purchase times
+	- [ ] /expiration.list
+	- [ ] /low.stock.list
+	- [ ] Inferences on when something would expire (eg: bell peppers)
+	- [ ] On disk database ndb
+
+- [ ] todofs
+	- [ ] todo.txt reference
+	- [ ] priorities (Eisenhower Method: 1) Quick Important 2) Slow Important 3) Quick Not-important 4) Slow Not-important)
+	- [ ] Projects
+	- [ ] Categories
+	- [ ] Due Dates
+	- [ ] Non-standard features
+		- [ ] Birdseye View
+		- [ ] PARA
+		- [ ] ulid
+	- [ ] FUTURE: Time Vector Pair syncronization
+
+- [ ] os9
+	- [ ] Work Cycles/Pomodoro
+
+- [x] Varfs
+	- [x] timer
+		- [x] start (unix timestamp)
+		- [x] end (unix timestamp)
+		- [x] single (seconds left, simple read)
+		- [x] ctl

@@ -20,13 +20,13 @@ char UN[] = "R", buf[1 << 14];
 List vars, gates;
 uint32_t varcnt = 2;
 
-// delete variables
-// events on deletion
-// ram files (entire directory?)
-// ev files
-// timer files
-// number files (+ - operations)
-// Queue file (for work queue, eg: work/break/work/break/work/long-break/work/break/work/end)
+// [ ] delete variables
+// [ ] events on deletion
+// [ ] ram files (entire directory?)
+// [ ] ev files
+// [x] timer files
+// [ ] number files (+ - operations)
+// [ ] Queue file (for work queue, eg: work/break/work/break/work/long-break/work/break/work/end)
 
 //
 // Variable type directories
@@ -67,13 +67,34 @@ R9file var_d = {
 		,.name	= "ev"
 		,ST_DEFAULTS
 	}
+}, time_start_d = {
+	.st = {
+		.qid	= {.type = C9qtdir, .path = 6}
+		,.mode	= C9stdir | 0500
+		,.name	= "start"
+		,ST_DEFAULTS
+	}
+}, time_end_d = {
+	.st = {
+		.qid	= {.type = C9qtdir, .path = 7}
+		,.mode	= C9stdir | 0500
+		,.name	= "end"
+		,ST_DEFAULTS
+	}
+}, time_single_d = {
+	.st = {
+		.qid	= {.type = C9qtdir, .path = 8}
+		,.mode	= C9stdir | 0500
+		,.name	= "single"
+		,ST_DEFAULTS
+	}
 };
 
 typedef struct {
-	R9file gate, ev;
+	R9file gate, ev, start, end, single;
 	List node, open_ev, open_gate;
-	uint64_t expire, next;
-	uint32_t period;
+	uint64_t expire, next, ctime;
+	uint32_t period, duration;
 	uint8_t mem[];
 } TimeFile;
 
@@ -280,12 +301,67 @@ void time_gate_clunk(R9fid *f) {
 	}
 }
 
-R9fileEv time_gate_ev = {
+static void time_start_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+	TimeFile * tf = dill_cont(f->file, TimeFile, start);
+	char buf[1 << 6];
+	ssize_t sz;
+	
+	sz = sprintf(buf, "%llu\n", tf->ctime);
+
+	if (sz > 0) {
+		s9read(&f->s->c->ctx, tag, buf, sz);
+	} else {
+		s9read(&f->s->c->ctx, tag, NULL, 0);
+	}
+}
+
+static void time_end_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+	TimeFile * tf = dill_cont(f->file, TimeFile, end);
+	char buf[1 << 6];
+	ssize_t sz;
+	
+	sz = sprintf(buf, "%llu\n", tf->expire);
+
+	if (sz > 0) {
+		s9read(&f->s->c->ctx, tag, buf, sz);
+	} else {
+		s9read(&f->s->c->ctx, tag, NULL, 0);
+	}
+}
+
+static void time_single_read(R9fid* f, C9tag tag, uint64_t offset, uint32_t size) {
+	TimeFile * tf = dill_cont(f->file, TimeFile, single);
+	char buf[1 << 6];
+	ssize_t sz;
+	uint64_t nowt = flux_s();
+
+	if (nowt > tf->expire) {
+		sz = 2;
+		buf[0]	= '0';
+		buf[1]	= '\n';
+	} else {
+		sz = sprintf(buf, "%llu\n", tf->expire - flux_s());	
+	}
+
+	if (sz > 0) {
+		s9read(&f->s->c->ctx, tag, buf, sz);
+	} else {
+		s9read(&f->s->c->ctx, tag, NULL, 0);
+	}
+}
+
+R9fileEv time_ev_ev = {
 	.on_read	= time_ev_read
 	,.on_clunk	= time_ev_clunk
-}, time_ev_ev = {
+}, time_gate_ev = {
 	.on_read	= time_gate_read
 	,.on_clunk	= time_gate_clunk
+}, time_start_ev = {
+	.on_shortread	= time_start_read
+}, time_end_ev = {
+	.on_shortread	= time_end_read
+}, time_single_ev = {
+	.on_shortread	= time_single_read
 };
 
 int newtime(const char * key, const char * due, const char * period) {
@@ -303,31 +379,54 @@ int newtime(const char * key, const char * due, const char * period) {
 		return -1;
 	}
 
-	time = calloc(1, sizeof(TimeFile) + 128);
+	time = calloc(1, sizeof(TimeFile) + strlen(key) + 1);
 
 	if_slow (NULL == time) {
 		return -1;
 	}
 
-	time->expire = flux_s() + duet;
-	time->next	= flux_s() + periodt;
+	time->ctime	= flux_s();
+	time->expire = time->ctime + duet;
+	time->next	= time->ctime + periodt;
+	time->duration	= duet;
 	time->period	= periodt;
 
-	// We are assuming that the keyname fits in our 128 byte buffer
 	strcpy(time->mem, key);
 
-	st = &time->gate.st;
+	st = &time->start.st;
 
 	st->uid = UN;
 	st->gid = UN;
 	st->muid = UN;
 	st->name = time->mem;
 	st->mode = 0400;
-	st->qid.path = varcnt++;
+	st->qid.path = varcnt | (2LL << 31);
 	st->atime = flux_s();
 	st->mtime = flux_s();
 
-	st = &time->ev.st;
+	st = &time->end.st;
+
+	st->uid = UN;
+	st->gid = UN;
+	st->muid = UN;
+	st->name = time->mem;
+	st->mode = 0400;
+	st->qid.path = varcnt | (3LL << 31);
+	st->atime = flux_s();
+	st->mtime = flux_s();
+
+	st = &time->single.st;
+
+	st->uid = UN;
+	st->gid = UN;
+	st->muid = UN;
+	st->name = time->mem;
+	st->mode = 0400;
+	st->qid.path = varcnt | (4LL << 31);
+	st->atime = flux_s();
+	st->mtime = flux_s();
+
+	st = &time->gate.st;
 
 	st->uid = UN;
 	st->gid = UN;
@@ -338,8 +437,22 @@ int newtime(const char * key, const char * due, const char * period) {
 	st->atime = flux_s();
 	st->mtime = flux_s();
 
+	st = &time->ev.st;
+
+	st->uid = UN;
+	st->gid = UN;
+	st->muid = UN;
+	st->name = time->mem;
+	st->mode = 0400;
+	st->qid.path = varcnt++;
+	st->atime = flux_s();
+	st->mtime = flux_s();
+
 	time->gate.ev	= &time_gate_ev;
 	time->ev.ev	= &time_ev_ev;
+	time->start.ev	= &time_start_ev;
+	time->end.ev	= &time_end_ev;
+	time->single.ev	= &time_single_ev;
 
 	dill_list_init(&time->open_ev);
 	dill_list_init(&time->open_gate);
@@ -532,32 +645,79 @@ int newvar(const char * key) {
 	return 0;
 }
 
-int ctl_write(R9fid* f, uint32_t size, uint8_t *data, char ** errstr) {
-	char buf[1 << 7], *val, *end, *p[2];
-	ssize_t sz;
+#define match(b, str) (0 == flux_bufeq((b), BUFLIT(str), NULL))
+#define argcheck(n) do {\
+	if (pp - bb <= n) {\
+		*errstr = "Insufficient arguments";\
+		return -1;\
+	}\
+} while (0)
 
-	if (0 > (sz = flux_str_parse_ctl(data, buf, size, 1 << 7, &val))) {
-		*errstr = "Invalid ctl string";
+int ctl_write(R9fid* f, uint32_t size, uint8_t *data, char ** errstr) {
+	uint8_t *b, *end;
+	Buffer bb[16], *pp;
+	TimeFile *tf;
+	R9file *rf;
+
+	pp = bb;
+
+	end	= data + size;
+
+	for (b = data; pp < bb + 16 && b < end; ++pp) {
+		pp->start = b;
+		flux_bufadvance(b, end, ' ' != *b);
+		if (' ' != *b) {
+			pp->end = end;
+			*end = 0; // TODO: FIXME BAD BAD BAD BAD (over-run of *data)
+		} else {
+			pp->end	= b;
+			flux_bufadvance(b, end, ' ' == *b);
+			pp->end[0] = 0;
+		}
+	}
+
+	if (b != end) {
+		*errstr	= "To many tokens in ctl string";
 		return -1;
 	}
 
-	end = val + sz;
+	if (match(bb[0], "var")) {
+		argcheck(1);
 
-	// key == buf ; val = val
-
-	if (!strcmp(buf, "var")) {
 		// check for colision
-		if (r9seek_tmp(&var_d, f->s, val)) {
+		if (r9seek_tmp(&var_d, f->s, bb[1].start)) {
 			return 0;
 		}
 
-		if (newvar(val)) {
+		if (newvar(bb[1].start)) {
 			*errstr = "Could not allocate memory";
 			return -1;
 		}
-	} else if (!strcmp(buf, "time")) {
+	} else if (match(bb[0], "reset")) {
+		if (NULL == (rf = r9seek_tmp(&time_ev_d, f->s, bb[1].start))) {
+			*errstr = "No such timer";
+			return -1;
+		}
+		tf = dill_cont(rf, TimeFile, ev);
+
+		if (tf->expire) {
+			*errstr = "Timer still active"; // Do we actually want this behavior though?
+			return -1;
+		}
+
+		if (!dill_list_empty(&tf->open_ev) || !dill_list_empty(&tf->open_gate)) {
+			*errstr = "Gate and event files not flushed";
+			return -1;
+		}
+
+		// TODO: period
+
+		tf->ctime	= flux_s();
+		tf->expire	= tf->duration + tf->ctime;
+	} else if (match(bb[0], "time")) {
+		argcheck(2);
 		// check for colision
-		if (r9seek_tmp(&time_d, f->s, val)) {
+		if (r9seek_tmp(&time_ev_d, f->s, bb[1].start)) {
 			return 0;
 		}
 
@@ -566,41 +726,18 @@ int ctl_write(R9fid* f, uint32_t size, uint8_t *data, char ** errstr) {
 		// time name due (due)
 		// time name due Yt (due period)
 
-		p[0] = val;
-
-		for (; *p[0]; ++p[0]) {
-			if (' ' == *p[0]) {
-				*p[0] = 0;
-				p[0]++;
-				break;
-			}
-		}
-
-		if (!*p[0]) {
-			*errstr = "Insufficient arguments";
-			return -1;
-		}
-
-		p[1] = p[0];
-		for (; *p[1]; ++p[1]) {
-			if (' ' == *p[1]) {
-				*p[1] = 0;
-				p[1]++;
-				break;
-			}
-		}
-
-		if (newtime(val, p[0], p[1])) {
+		if (newtime(bb[1].start, bb[2].start, (pp - bb > 3) ? bb[3].start : "")) {
 			*errstr = "Could not allocate memory";
 			return -1;
 		}
-	} else if (!strcmp(buf, "gate")) {
+	} else if (match(bb[0], "gate")) {
+		argcheck(1);
 		// check for colision
-		if (r9seek_tmp(&gate_d, f->s, val)) {
+		if (r9seek_tmp(&gate_d, f->s, bb[1].start)) {
 			return 0;
 		}
 
-		if (newgate(val)) {
+		if (newgate(bb[1].start)) {
 			*errstr = "Could not allocate memory";
 			return -1;
 		}
@@ -609,17 +746,12 @@ int ctl_write(R9fid* f, uint32_t size, uint8_t *data, char ** errstr) {
 		return -1;
 	}
 
-	for (int i = 0; i < sz; ++i) {
-		if (!val[i]) {
-			val[i] = ' ';
-		}
+	while (pp > bb) {
+		--pp;
+		pp->end[0] = ' ';
 	}
 
-	val[-1] = ' '; // remove the nul-terminator from the key
-	val[sz] = '\n';
-	sz++;
-	val[sz] = 0;
-	flux_mq_write(events_mq, buf, val + sz - buf);
+	flux_mq_write(events_mq, data, size);
 
 	return 0;
 }
@@ -678,8 +810,11 @@ int r9list_tmp(R9fid *f, C9stat **st) {
 	} else if (&time_d == f->file) {
 		st[0] = &time_gate_d.st;
 		st[1] = &time_ev_d.st;
+		st[2] = &time_start_d.st;
+		st[3] = &time_end_d.st;
+		st[4] = &time_single_d.st;
 
-		return 2;
+		return 5;
 	} else if (&time_ev_d == f->file) {
 		TimeFile *cur;
 
@@ -694,6 +829,33 @@ int r9list_tmp(R9fid *f, C9stat **st) {
 
 		flux_list_foreach(&time_head, node, it, cur) {
 			st[ret] = &cur->gate.st;
+			++ret;
+		}
+
+		return ret;
+	} else if (&time_start_d == f->file) {
+		TimeFile *cur;
+
+		flux_list_foreach(&time_head, node, it, cur) {
+			st[ret] = &cur->start.st;
+			++ret;
+		}
+
+		return ret;
+	} else if (&time_end_d == f->file) {
+		TimeFile *cur;
+
+		flux_list_foreach(&time_head, node, it, cur) {
+			st[ret] = &cur->end.st;
+			++ret;
+		}
+
+		return ret;
+	} else if (&time_single_d == f->file) {
+		TimeFile *cur;
+
+		flux_list_foreach(&time_head, node, it, cur) {
+			st[ret] = &cur->single.st;
 			++ret;
 		}
 
@@ -743,6 +905,36 @@ R9file *r9seek_tmp(R9file *rf, R9session *s, const char *str) {
 			return &time_ev_d;
 		} else if (0 == strcmp(time_gate_d.st.name, str)) {
 			return &time_gate_d;
+		} else if (0 == strcmp(time_single_d.st.name, str)) {
+			return &time_single_d;
+		} else if (0 == strcmp(time_start_d.st.name, str)) {
+			return &time_start_d;
+		} else if (0 == strcmp(time_end_d.st.name, str)) {
+			return &time_end_d;
+		}
+	} else if (&time_end_d == rf) {
+		TimeFile *cur;
+
+		flux_list_foreach(&time_head, node, it, cur) {
+			if (!strcmp(str, cur->mem)) {
+				return &cur->end;
+			}
+		}
+	} else if (&time_start_d == rf) {
+		TimeFile *cur;
+
+		flux_list_foreach(&time_head, node, it, cur) {
+			if (!strcmp(str, cur->mem)) {
+				return &cur->start;
+			}
+		}
+	} else if (&time_single_d == rf) {
+		TimeFile *cur;
+
+		flux_list_foreach(&time_head, node, it, cur) {
+			if (!strcmp(str, cur->mem)) {
+				return &cur->single;
+			}
 		}
 	} else if (&time_gate_d == rf) {
 		TimeFile *cur;
@@ -791,7 +983,7 @@ int main(void) {
 	dill_list_init(&time_head);
 	dill_list_init(&free_tags);
 
-	ipaddr_local(&addr, NULL, 5555, 0);
+	ipaddr_local(&addr, NULL, 1125, 0);
 
 	srv	= tcp_listen(&addr, 10);
 	R9srv * srv9 = flux_r9getMainSrv();

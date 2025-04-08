@@ -1,11 +1,14 @@
 MKSHELL	= rcxs
 
-TESTS = time glob json mq str
+TESTS = time glob json mq str _
 
 $BUILD/test_%.o: tests/%.c
 	$CC $CFLAGS -DSNOW_ENABLED $CPPFLAGS $TARGET_ARCH -c -o $target $prereq
 
-$BUILD/test_%: $BUILD/test_%.o
+$BUILD/check: ${TESTS:%=$BUILD/test_%.o}
 	$CC $LDFLAGS $TARGET_ARCH $prereq $LDLIBS -o $target
 
-all:V: ${TESTS:%=$BUILD/test_%}
+all:V: $BUILD/check
+
+check:V: $BUILD/check
+	$BUILD/check

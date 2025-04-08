@@ -7,7 +7,7 @@ MKSHELL = rcxs
 ARFLAGS	= -rv
 AR	= ar
 
-CMDS	= pread fact s 9dnd 9p
+CMDS	= pread fact s 9dnd 9p hgate rpc dns pane color termpane dbus munge ulid kprox xpane # wolf
 #BIN = $BUILD/o.pread $BUILD/o.fact $BUILD/o.s $BUILD/o.9dnd $BUILD/o.9p
 BIN	= ${CMDS:%=$BUILD/o.%}
 MAN	= man/ipc_connect.3 man/yield.3
@@ -34,6 +34,9 @@ DIRS	= $BUILD/cmd/niine/
 #       $pid          the process id for the mk executing the recipe.
 
 all:V:
+
+wtf:VQ:
+	echo WTF
 
 %.png: %.dot
 	dot -Tpng -o $target $prereq

@@ -96,5 +96,3 @@ describe(msg) {
 		msgfree(&m);
 	}
 }
-
-snow_main();

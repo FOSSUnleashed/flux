@@ -49,7 +49,10 @@ typedef int dill_handle;
 /* Defines a unique identifier of type const void*. */
 #define dill_unique_id(name) \
 	static const int dill_concat(name, ___) = 0;\
-	dill_query_type name = (dill_query_type)&dill_concat(name, ___);
+	const dill_query_type name = (dill_query_type)&dill_concat(name, ___);
+
+#define dill_unique_id_pub(name) \
+	DILL_EXPORT extern const dill_query_type name;
 
 /*  Takes a pointer to a member variable and computes pointer to the structure
     that contains it. 'type' is type of the structure, not the member. */

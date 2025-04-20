@@ -9,7 +9,7 @@ if {!access $FLUX_LIB} {
 	}
 }
 
-var BUILD FLUX_LIB
+var BUILD FLUX_LIB CPPFLAGS BASE
 
 # Did flux_local_mk get defined in ~/lib/flux_build_local?  If so, run it
 ~ $fn-flux_local_mk || flux_local_mk

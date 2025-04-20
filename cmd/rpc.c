@@ -38,6 +38,7 @@ npMsg _msg[16];
 int hexdump = 1;
 
 uint8_t hexbuf[MSZ], *hexe = hexbuf + 1024;
+Buffer hex = BUFLIT(hexbuf);
 
 static npState *getState(handle rpc) {
 	struct flux_rpcstorage *sto = dill_hquery(rpc, flux_rpc_type);
@@ -118,7 +119,8 @@ int npRead(npState *st, npMsg **pmsg, uint8_t *buf) {
 	rc = brecv(st->sock, buf + 7, msg->sz - 7, -1);
 
 	if (hexdump) {
-		he = flux_bufdump(hexbuf, hexe, buf, buf + msg->sz);
+		Buffer b = {buf, buf + msg->sz};
+		he = flux_bufdump(hex, b);
 		printf("%.*sREAD: %d %d\n", he - hexbuf, hexbuf, rc, errno);
 	}
 
@@ -140,7 +142,8 @@ static int rpcsend(npState *st, npMsg **_msg, uint8_t *buf, uint8_t *be, uint8_t
 	writeHeader(buf, be - buf, type, msg->tag);
 
 	if (hexdump) {
-		he = flux_bufdump(hexbuf, hexe, buf, be);
+		Buffer b = {buf, be};
+		he = flux_bufdump(hex, b);
 		printf("%.*s", he - hexbuf, hexbuf);
 	}
 

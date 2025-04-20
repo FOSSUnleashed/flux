@@ -14,3 +14,7 @@ uint64_t flux_s();
 uint32_t flux_sit();
 //uint32_t flux_sit_from(time_t);
 
+uint8_t flux_time_gen8();
+uint16_t flux_time_gen16();
+uint32_t flux_time_gen32();
+uint64_t flux_time_gen64();

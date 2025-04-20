@@ -11,6 +11,7 @@ coroutine void proxy(handle ag, handle cli) {
 	uint8_t buffer[MSZ], out[MSZ], *oe = out + MSZ;
 	FILE *fp;
 	ssize_t sz, rc;
+	Buffer b = BUFLIT(out);
 
 	sprintf(buffer, "log_%04d.txt", ++i);
 
@@ -27,7 +28,7 @@ coroutine void proxy(handle ag, handle cli) {
 			break;
 		}
 
-		oe = flux_bufdump(out, out + MSZ, buffer, buffer + sz);
+		oe = flux_bufdump(b, (Buffer){buffer, buffer + sz});
 		printf("%.*s", oe - out, out);
 		rc = fwrite(buffer, sz, 1, fp);
 		fflush(fp);
@@ -47,7 +48,7 @@ coroutine void proxy(handle ag, handle cli) {
 			break;
 		}
 
-		oe = flux_bufdump(out, out + MSZ, buffer, buffer + sz);
+		oe = flux_bufdump(b, (Buffer){buffer, buffer + sz});
 		printf("%.*s", oe - out, out);
 		rc = fwrite(buffer, sz, 1, fp);
 		fflush(fp);

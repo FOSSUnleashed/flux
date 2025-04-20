@@ -10,5 +10,5 @@ $BUILD/check: ${TESTS:%=$BUILD/test_%.o}
 
 all:V: $BUILD/check
 
-check:V: $BUILD/check
+check:V: $BUILD/lib/libflux.a $BUILD/check
 	$BUILD/check

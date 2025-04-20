@@ -52,6 +52,12 @@ describe(mq) {
 	}
 
 	it("Multi-read") {
+/*
+INTERMITIENT FAILURE:
+✕ Failed:  Multi-read:  
+    (str) Expected buffer to equal "this", but got "123": Read
+    in tests/mq.c:57(mq)
+*/
 		rB = flux_mq_get_reader(mq);
 
 		read_cmp(rB, "this", "Read");

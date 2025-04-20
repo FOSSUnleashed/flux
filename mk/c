@@ -1,4 +1,5 @@
-CPPFLAGS	= $CPPFLAGS -Iinclude -Ibuild/any/include -DWOLFSSL_USER_SETTINGS
+INCLUDES	= -Iinclude -Ibuild/any/include
+CPPFLAGS	= $CPPFLAGS $INCLUDES -DWOLFSSL_USER_SETTINGS
 CFLAGS	= $CFLAGS $CPPFLAGS -g3 -Wall -Wno-format -Wno-pointer-sign -Wno-unused-function -fstack-protector-all -mshstk
 LDLIBS	= $LDLIBS -L$FLUX_LIB -lflux -ldill -lssl -lcrypto
 #LDLIBS	= $LDLIBS -L$FLUX_LIB -lflux -ldill -lwolfssl

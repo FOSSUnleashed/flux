@@ -70,6 +70,30 @@ int flux_bufcmp(Buffer a, Buffer b, uint8_t ** out) {
 	return res;
 }
 
+int flux_bufcasecmp(Buffer a, Buffer b, uint8_t ** out) {
+	int res = 0;
+
+	if (isbadbuffer(a) || isbadbuffer(b)) {
+		errno = EINVAL;
+		return -257;
+	}
+
+	if ((a.end - a.start) != (b.end - b.start)) {
+		return -257;
+	}
+
+	// b size check infered
+	for (; a.start < a.end && 0 == res; ++a.start, ++b.start) {
+		res = (*a.start & 0xDF) - (*b.start & 0xDF);
+	}
+
+	if (NULL != out) {
+		*out = a.start;
+	}
+
+	return res;
+}
+
 // *out returns the last character matched successfully
 int flux_bufeq(Buffer a, Buffer b, uint8_t ** out) {
 	int res = 0;
@@ -126,11 +150,33 @@ Buffer flux_bufcpy(Buffer dst, Buffer src) {
 Buffer flux_buflcpy(Buffer dst, Buffer src) {
 	Buffer out = flux_bufcpy(dst, src);
 
-	if (!isbadbuffer(out) && *out.start) {
-		*out.start = 0;
+	if (!isbadbuffer(out) && *out.end && out.end < dst.end) {
+		*out.end = 0;
+		out.end++;
 	}
 
 	return out;
+}
+
+FluxBuffer flux_bufextract(FluxBuffer haystack, uint8_t needle, FluxBuffer *remainder) {
+	uint8_t *p = haystack.start;
+
+	if (isbadbuffer(haystack)) {
+		return badbuffer;
+	}
+
+	flux_bufadvance(p, haystack.end, needle != *p);
+
+	if (NULL != remainder) {
+		remainder->end	= haystack.end;
+		remainder->start	= p;
+
+		flux_bufadvance(remainder->start, remainder->end, needle == *remainder->start);
+	}
+
+	haystack.end = p;
+
+	return haystack;
 }
 
 // Sets a buffer to be all of one value
@@ -153,18 +199,18 @@ void flux_bufset(Buffer dst, uint8_t val) {
 // flux_buf_w64
 
 
-uint8_t *flux_bufdump(uint8_t *out, uint8_t *eout, const uint8_t *in, const uint8_t *ein) {
-	uint8_t *b = out, *c = (uint8_t *)in, *p, chars[] = "0123456789ABCDEF";
+uint8_t *flux_bufdump(Buffer out, Buffer in) {
+	uint8_t *b = out.start, *c = in.start, *p, chars[] = "0123456789ABCDEF";
 	uintptr_t offset;
 
-	if (eout <= out || ein <= in) {
+	if (isbadbuffer(in) || isbadbuffer(out)) {
 		errno = EINVAL;
 		return NULL;
 	}
 
 	// 67 characters per line of output
-	while (c < ein && b + 68 < eout) {
-		offset = c - in;
+	while (c < in.end && b + 68 < out.end) {
+		offset = c - in.start;
 
 		// offset (9 characters)
 		p = b + 8;
@@ -184,7 +230,7 @@ uint8_t *flux_bufdump(uint8_t *out, uint8_t *eout, const uint8_t *in, const uint
 		p = c;
 
 		while (p - c < 16) {
-			if (p < ein) {
+			if (p < in.end) {
 				*b++ = chars[(*p & 0xF0) >> 4];
 				*b++ = chars[ *p & 0x0F];
 			} else {
@@ -203,7 +249,7 @@ uint8_t *flux_bufdump(uint8_t *out, uint8_t *eout, const uint8_t *in, const uint
 		p = c;
 
 		while (p - c < 16) {
-			if (p < ein) {
+			if (p < in.end) {
 				*b++ = (0x20 > *p || *p > 0x7F) ? '.' : *p;
 			} else {
 				*b++ = ' ';

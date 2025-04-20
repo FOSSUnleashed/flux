@@ -16,9 +16,11 @@ FLUX_	= \
 	cfg\
 	mqueue\
 	hgate\
+	http\
 	glob\
 	util\
 	str\
+	strint\
 	t9\
 	fs\
 	twitch\

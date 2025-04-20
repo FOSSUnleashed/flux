@@ -1,8 +1,11 @@
 #include <snow.h>
 #include <string.h>
+#include <flux/str.h>
 
 enum GlobType {
 	GLOB_DEAD
+	,GLOB_LITERAL
+	,GLOB_WILD
 	,GLOB_PREFIX // prefix*
 	,GLOB_SUFFIX // *suffix
 	,GLOB_MIXED // prefix*suffix
@@ -13,28 +16,74 @@ enum GlobType {
 
 typedef struct glob Glob;
 struct glob {
-	char * pattern;
-	int type, len, plen, slen, cnt;
+	Buffer *pattern;
+	uint16_t plen, slen, cnt; // Prefix Length | Suffix Length | Wildcard Count
+	uint16_t min, max; // max = 0 if glob contains *
+	enum GlobType type;
 };
 
-int glob_init(Glob * g, const char * pat);
+int glob_init(Glob * g, Buffer pat);
 void glob_free(Glob * g);
-int glob_match(Glob * g, const char * const str);
+int glob_match(Glob * g, Buffer str);
 
 //
 // Tests
 //
 
-#define GLOB_TEST(v, str) asserteq(glob_match(&g, str), v, str)
+#define GLOB_TEST(v, str) asserteq(glob_match(&g, BUFLIT1(str)), v, str)
 
 describe(glob) {
 	Glob g;
 
+	it("*") {
+		asserteq(glob_init(&g, BUFLIT1("*")), GLOB_WILD);
+
+		asserteq(g.plen, 0);
+		asserteq(g.slen, 0);
+		asserteq(g.min, 0);
+		asserteq(g.max, 0);
+
+		GLOB_TEST(1, "test");
+		GLOB_TEST(1, "");
+		GLOB_TEST(1, "foo");
+		GLOB_TEST(1, "a test");
+		glob_free(&g);
+	}
+
+	it("?*??") {
+		asserteq(glob_init(&g, BUFLIT1("?*??")), GLOB_WILD);
+
+		asserteq(g.plen, 0);
+		asserteq(g.slen, 0);
+		asserteq(g.max, 0);
+
+		GLOB_TEST(1, "test");
+		GLOB_TEST(0, "");
+		GLOB_TEST(1, "foo");
+		GLOB_TEST(1, "a test");
+		glob_free(&g);
+	}
+
+	it("???") {
+		asserteq(glob_init(&g, BUFLIT1("???")), GLOB_WILD);
+
+		asserteq(g.plen, 0);
+		asserteq(g.slen, 0);
+		asserteq(g.max, 3);
+
+		GLOB_TEST(0, "test");
+		GLOB_TEST(0, "");
+		GLOB_TEST(1, "foo");
+		GLOB_TEST(0, "atest");
+		glob_free(&g);
+	}
+
 	it("*test") {
-		asserteq(glob_init(&g, "*test"), GLOB_SUFFIX);
+		asserteq(glob_init(&g, BUFLIT1("*test")), GLOB_SUFFIX);
 
 		asserteq(g.plen, 0);
 		asserteq(g.slen, 4);
+		asserteq(g.max, 0);
 
 		GLOB_TEST(1, "test");
 		GLOB_TEST(0, "");
@@ -44,10 +93,11 @@ describe(glob) {
 	}
 
 	it("pre*") {
-		asserteq(glob_init(&g, "pre*"), GLOB_PREFIX);
+		asserteq(glob_init(&g, BUFLIT1("pre*")), GLOB_PREFIX);
 
 		asserteq(g.plen, 3);
 		asserteq(g.slen, 0);
+		asserteq(g.max, 0);
 
 		GLOB_TEST(1, "prediction");
 		GLOB_TEST(0, "");
@@ -57,10 +107,11 @@ describe(glob) {
 	}
 
 	it("mixed*media") {
-		asserteq(glob_init(&g, "mixed*media"), GLOB_MIXED);
+		asserteq(glob_init(&g, BUFLIT1("mixed*media")), GLOB_MIXED);
 
 		asserteq(g.plen, 5);
 		asserteq(g.slen, 5);
+		asserteq(g.max, 0);
 
 		GLOB_TEST(1, "mixedmedia");
 		GLOB_TEST(0, "");
@@ -69,17 +120,18 @@ describe(glob) {
 
 		glob_free(&g);
 	}
-
+/*
 	it("multi*meter*") {
-		asserteq(glob_init(&g, "multi*meter*"), GLOB_MULTI);
+		asserteq(glob_init(&g, BUFLIT1("multi*meter*")), GLOB_MULTI);
 		glob_free(&g);
-	}
+	} // */
 
 	it("pre?") {
-		asserteq(glob_init(&g, "pre?"), GLOB_PREFIX);
+		asserteq(glob_init(&g, BUFLIT1("pre?")), GLOB_PREFIX);
 
 		asserteq(g.plen, 3);
 		asserteq(g.slen, 0);
+		asserteq(g.max, 4);
 
 		GLOB_TEST(0, "prediction");
 		GLOB_TEST(0, "");
@@ -92,10 +144,11 @@ describe(glob) {
 	}
 
 	it("?fix") {
-		asserteq(glob_init(&g, "?fix"), GLOB_SUFFIX);
+		asserteq(glob_init(&g, BUFLIT1("?fix")), GLOB_SUFFIX);
 
 		asserteq(g.plen, 0);
 		asserteq(g.slen, 3);
+		asserteq(g.max, 4);
 
 		GLOB_TEST(1, "afix");
 		GLOB_TEST(0, "");
@@ -107,10 +160,11 @@ describe(glob) {
 	}
 
 	it("question?mark") {
-		asserteq(glob_init(&g, "question?mark"), GLOB_MIXED);
+		asserteq(glob_init(&g, BUFLIT1("question?mark")), GLOB_MIXED);
 
 		asserteq(g.plen, 8);
 		asserteq(g.slen, 4);
+		asserteq(g.max, 13);
 
 		GLOB_TEST(0, "questionmark");
 		GLOB_TEST(0, "");

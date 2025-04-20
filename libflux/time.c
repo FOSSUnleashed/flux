@@ -98,3 +98,30 @@ int64_t flux_parsetime(const char * const s) {
 
 	return res;
 }
+
+#define INT(X) uint ## X ## _t
+#define GEN(X) \
+INT(X) flux_time_gen ## X  () { \
+	INT(X) r = 0, bits = 0, tmp; \
+\
+	while (bits < X) { \
+		tmp = (flux_us() == flux_us()) | ((flux_us() == flux_us()) << 1); \
+\
+		switch (tmp) {\
+			case 0:\
+			case 3:\
+				break;\
+			case 1:\
+			case 2:\
+				r = (r << 1) | (tmp & 1);\
+				bits++;\
+		}\
+	}\
+\
+	return r;\
+}
+
+GEN(8)
+GEN(16)
+GEN(32)
+GEN(64)

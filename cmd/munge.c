@@ -66,7 +66,7 @@ Buffer munge_recv(handle munge, Buffer b, int64_t deadline) {
 		goto error;
 	}
 
-	p = flux_bufdump(c.start, c.end, b.start, b.start + 11 + sz);
+	p = flux_bufdump(c, (Buffer){b.start, b.start + 11 + sz});
 
 	printf("%.*s", p - c.start, c.start);
 

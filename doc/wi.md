@@ -222,6 +222,37 @@
 		* Parrot_run -- 9p -- 
 		* ssh -- 9p -- Maybe?
 		* Moose -- 9p
+	- [ ] Languages
+		- [ ] APL
+		- [ ] Hare
+		- [ ] Crystal
+		- [ ] Smalltalk
+		- [ ] Scheme/Guile
+		- [o] Ocaml
+		- [ ] Racket
+		- [ ] TCL
+		- [ ] HHVM
+		- [ ] S-Lang
+		- [ ] V Lang
+		- [ ] Nim
+		- [ ] Zig
+		- [ ] Rust
+		- [-] Go
+		- [ ] Limbo
+		- [ ] Clojure
+		- [ ] Scala
+		- [ ] Kotlin
+		- [ ] Pike
+		- [ ] Holy-C
+		- [ ] Pony-C
+		- [ ] Objective-C
+		- [ ] Objective-C++
+		- [ ] D
+		- [ ] Swift
+		- [ ] Erlang
+		- [ ] Elixir
+		- [ ] GLEAM
+		- [ ]	Julia
 	* homenet / extnet / portnet
 	* Power Save
 	* Boot from Moose
